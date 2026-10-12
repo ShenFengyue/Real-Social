@@ -41,6 +41,32 @@ SYSTEM_PROMPT = r"""你是“真实社交回复训练器”的沟通教练。你
 }
 所有字段都必须是非空字符串，使用简体中文。"""
 
+SCENE_GENERATOR_PROMPT = r"""你是“真实社交回复训练器”的场景生成助手。用户会描述一个他想要的社交训练场景（可能是几句话、一个主题、一种关系或一个具体事件），你的任务是根据描述生成一个完整的训练场景和对应的沟通回复。
+
+要求：
+1. 先理解用户的意图：他可能只给了关系（如“和同事”）、事件（如“被要求加班”）、情绪（如“不知道怎么拒绝”）或希望练习的点。
+2. 如果描述比较模糊，基于最合理的假设补全成一个具体、真实、可练习的场景；不要反问用户，也不要编造与描述无关的严重事实。
+3. group 字段从这些分类中选择最贴切的一个：同事、工作、父母、朋友、社交、两性社交、日常社交、朋友与同事、朋友与家人。如果都不合适，使用“日常社交”。
+4. title 字段给出一个简短、易辨认的场景标题。
+5. trigger 字段写清楚具体情景：发生了什么、双方是什么关系、用户担心什么后果。使用自然的中文，不要把“你应该如何回应”写进去。
+6. extra 字段：如果用户描述里包含明确偏好（例如“不想闹僵”“对方是上级”“回复要短”），把这些偏好写成额外要求；没有就返回空字符串。
+7. soft、firm、bad、rule 四个字段按照沟通原则生成：soft 温和但清晰，firm 坚定直接，bad 常见但不理想，rule 用一到三句话解释关键原则。
+8. 回复要简洁、口语化、可直接说出口；不讨好、不羞辱、不操纵、不报复；考虑权力差异、关系、冲突成本和现实安全。
+9. 如果描述涉及威胁、暴力、跟踪、严重职场报复或现实安全风险，优先考虑安全、留证、寻求可信支持或正式渠道。
+
+只返回一个合法 JSON 对象，不要使用 Markdown 代码围栏，也不要添加 JSON 以外的文字。结构必须严格如下：
+{
+  "group": "分类",
+  "title": "场景标题",
+  "trigger": "具体情景",
+  "extra": "额外要求（可空字符串）",
+  "soft": "温和但清晰的回复",
+  "firm": "坚定直接的回复",
+  "bad": "常见但不理想的反应",
+  "rule": "沟通原则"
+}
+所有字段都必须是非空字符串（extra 可以为空字符串），使用简体中文。"""
+
 DEFAULT_MODEL = "deepseek-flash"
 API_URL = "https://api.deepseek.com/chat/completions"
 
@@ -1070,17 +1096,24 @@ class SocialReplyTrainer:
         win.transient(self.root)
         win.grab_set()
         win.configure(bg=BG)
-        self._center_dialog(win, 900, 660, 820, 600)
+        self._center_dialog(win, 900, 700, 820, 620)
 
         outer = ttk.Frame(win, padding=(30, 27, 30, 24))
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(2, weight=1)
+        outer.rowconfigure(3, weight=1)
         ttk.Label(outer, text="新增社交场景", style="Title.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(outer, text="写清楚发生了什么、你和对方是什么关系，以及你担心什么。AI 会生成两种回复和沟通分析。", style="SubTitle.TLabel", wraplength=830).grid(row=1, column=0, sticky="w", pady=(8, 20))
+        ttk.Label(outer, text="可以自己填写场景，也可以让 AI 根据你的描述生成一个完整场景。", style="SubTitle.TLabel", wraplength=830).grid(row=1, column=0, sticky="w", pady=(8, 14))
+
+        mode_var = tk.StringVar(value="manual")
+        reviewing = {"value": False}
+        generated_replies = {}
+        mode_row = ttk.Frame(outer)
+        mode_row.grid(row=2, column=0, sticky="w", pady=(0, 14))
+        ttk.Radiobutton(mode_row, text="手动填写场景", variable=mode_var, value="manual", command=lambda: switch_mode()).pack(side="left")
+        ttk.Radiobutton(mode_row, text="AI 生成场景", variable=mode_var, value="ai", command=lambda: switch_mode()).pack(side="left", padx=(18, 0))
 
         form = ttk.Frame(outer)
-        form.grid(row=2, column=0, sticky="nsew")
         form.columnconfigure(1, weight=1)
         ttk.Label(form, text="场景分类", style="Field.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 16), pady=(0, 13))
         group_var = tk.StringVar(value="日常社交")
@@ -1107,26 +1140,147 @@ class SocialReplyTrainer:
         extra.pack(fill="both", expand=True, padx=7, pady=6)
         extra.insert("1.0", "例如：不想把关系闹僵；考虑对方是我的上级；回复不要太长。")
 
+        ai_section = ttk.Frame(outer)
+        ai_section.columnconfigure(0, weight=1)
+        ai_section.rowconfigure(1, weight=1)
+        ttk.Label(ai_section, text="描述你想要的场景", style="Field.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ai_desc_surface = RoundedPanel(ai_section, fill=CARD, outline=BORDER, radius=12, canvas_bg=BG)
+        ai_desc_surface.grid(row=1, column=0, sticky="nsew")
+        ai_desc = tk.Text(ai_desc_surface, height=12, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=0)
+        ai_desc.pack(fill="both", expand=True, padx=7, pady=6)
+        ai_desc.insert("1.0", "例如：一个关于同事总把杂活推给我的场景，我们关系一般，我担心以后还要合作；希望练习怎么温和地拒绝。")
+
         status = ttk.Label(outer, text="提示：首次使用前，请点击主窗口的“API 设置”填入新的 DeepSeek API 密钥。", style="Muted.TLabel", wraplength=830)
-        status.grid(row=3, column=0, sticky="w", pady=(8, 13))
+        status.grid(row=4, column=0, sticky="w", pady=(8, 13))
         actions = ttk.Frame(outer)
-        actions.grid(row=4, column=0, sticky="ew")
+        actions.grid(row=5, column=0, sticky="ew")
         generate_btn = ttk.Button(actions, text="AI 生成并添加场景", style="Accent.TButton")
         generate_btn.pack(side="right")
         ttk.Button(actions, text="取消", command=win.destroy).pack(side="right", padx=(0, 8))
 
+        form.grid(row=3, column=0, sticky="nsew")
+
+        def switch_mode():
+            if mode_var.get() == "ai":
+                reviewing["value"] = False
+                generated_replies.clear()
+                form.grid_remove()
+                ai_section.grid(row=3, column=0, sticky="nsew")
+                generate_btn.configure(text="AI 生成场景")
+                status.configure(text="描述你想要的场景，AI 会生成分类、标题、具体情景、两种参考回复和沟通分析。")
+                ai_desc.focus_set()
+            else:
+                reviewing["value"] = False
+                generated_replies.clear()
+                ai_section.grid_remove()
+                form.grid(row=3, column=0, sticky="nsew")
+                generate_btn.configure(text="AI 生成并添加场景")
+                status.configure(text="提示：首次使用前，请点击主窗口的“API 设置”填入新的 DeepSeek API 密钥。")
+                title_entry.focus_set()
+
+        def save_and_add(scene, title):
+            self.custom_scenes.append(scene)
+            try:
+                _save_json(CUSTOM_SCENES_FILE, self.custom_scenes)
+            except OSError as e:
+                self.custom_scenes.pop()
+                messagebox.showerror("保存失败", f"AI 已生成场景，但无法保存到本机：{e}", parent=win)
+                generate_btn.configure(state="normal")
+                status.configure(text="请检查本机文件权限后重试。")
+                return
+            self.scenes.append(scene)
+            self.category.set("全部场景")
+            self.category_combo.configure(values=["全部场景"] + sorted({s["group"] for s in self.scenes}))
+            self._refresh_scene_list()
+            new_index = len(self.scenes) - 1
+            self._select_scene(new_index)
+            self.status_label.configure(text=f"AI 已生成并保存新场景：{title}")
+            messagebox.showinfo("添加成功", "新场景已保存到本机，下次启动仍会保留。", parent=win)
+            win.destroy()
+
         def on_generate():
             key = self.settings.get("api_key", "").strip()
             model = self.settings.get("model", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+            if not key:
+                messagebox.showwarning("尚未设置 API 密钥", "请先关闭此窗口，点击主窗口右上角“API 设置”，填入新建的 DeepSeek API 密钥。", parent=win)
+                return
+
+            if reviewing["value"]:
+                group = group_var.get().strip() or "日常社交"
+                title = title_var.get().strip()
+                trigger = situation.get("1.0", "end-1c").strip()
+                extra_notes = extra.get("1.0", "end-1c").strip()
+                if extra_notes.startswith("例如："):
+                    extra_notes = ""
+                if not title:
+                    messagebox.showwarning("请填写标题", "给这个社交情景起一个简短标题。", parent=win)
+                    title_entry.focus_set()
+                    return
+                if not trigger or trigger.startswith("例如："):
+                    messagebox.showwarning("请填写具体情景", "请把示例提示替换成你真实遇到的情况。", parent=win)
+                    situation.focus_set()
+                    return
+                scene = {
+                    "group": group,
+                    "title": title,
+                    "trigger": trigger,
+                    "extra": extra_notes,
+                    "soft": generated_replies.get("soft", ""),
+                    "firm": generated_replies.get("firm", ""),
+                    "bad": generated_replies.get("bad", ""),
+                    "rule": generated_replies.get("rule", "")
+                }
+                save_and_add(scene, title)
+                return
+
+            if mode_var.get() == "ai":
+                desc = ai_desc.get("1.0", "end-1c").strip()
+                if not desc or desc.startswith("例如："):
+                    messagebox.showwarning("请描述你想要的场景", "写下你想要练习的场景，例如人物关系、事件，或你担心的情况。", parent=win)
+                    ai_desc.focus_set()
+                    return
+                generate_btn.configure(state="disabled", text="AI 正在生成场景…")
+                status.configure(text="正在向 DeepSeek 请求生成场景，通常需要几秒钟。请不要关闭窗口。")
+
+                def worker():
+                    try:
+                        result = self._request_ai_scene(key, model, desc)
+                        self.root.after(0, lambda: on_scene_success(result))
+                    except Exception as e:
+                        err = str(e)
+                        self.root.after(0, lambda err=err: on_scene_error(err))
+
+                def on_scene_success(result):
+                    group_var.set(result["group"])
+                    title_var.set(result["title"])
+                    situation.delete("1.0", tk.END)
+                    situation.insert("1.0", result["trigger"])
+                    extra.delete("1.0", tk.END)
+                    extra.insert("1.0", result["extra"])
+                    generated_replies.clear()
+                    generated_replies.update({k: result[k] for k in ("soft", "firm", "bad", "rule")})
+                    reviewing["value"] = True
+                    ai_section.grid_remove()
+                    form.grid(row=3, column=0, sticky="nsew")
+                    mode_var.set("manual")
+                    generate_btn.configure(state="normal", text="确认添加场景")
+                    status.configure(text="AI 已生成场景草稿，你可以修改分类、标题、情景或额外要求，再确认添加。")
+                    title_entry.focus_set()
+
+                def on_scene_error(err):
+                    generate_btn.configure(state="normal", text="AI 生成场景")
+                    status.configure(text="生成失败。请检查 API 设置、网络和 DeepSeek 账户余额。")
+                    messagebox.showerror("AI 生成失败", err, parent=win)
+
+                threading.Thread(target=worker, daemon=True).start()
+                return
+
             title = title_var.get().strip()
             group = group_var.get().strip() or "日常社交"
             trigger = situation.get("1.0", "end-1c").strip()
             extra_notes = extra.get("1.0", "end-1c").strip()
             if extra_notes.startswith("例如："):
                 extra_notes = ""
-            if not key:
-                messagebox.showwarning("尚未设置 API 密钥", "请先关闭此窗口，点击主窗口右上角“API 设置”，填入新建的 DeepSeek API 密钥。", parent=win)
-                return
             if not title:
                 messagebox.showwarning("请填写标题", "给这个社交情景起一个简短标题。", parent=win)
                 title_entry.focus_set()
@@ -1141,12 +1295,12 @@ class SocialReplyTrainer:
             def worker():
                 try:
                     result = self._request_ai_replies(key, model, group, title, trigger, extra_notes)
-                    self.root.after(0, lambda: on_success(result, group, title, trigger))
+                    self.root.after(0, lambda: on_success(result))
                 except Exception as e:
                     err = str(e)
                     self.root.after(0, lambda err=err: on_error(err))
 
-            def on_success(result, group, title, trigger):
+            def on_success(result):
                 scene = {
                     "group": group,
                     "title": title,
@@ -1157,27 +1311,10 @@ class SocialReplyTrainer:
                     "bad": result["bad"],
                     "rule": result["rule"]
                 }
-                self.custom_scenes.append(scene)
-                try:
-                    _save_json(CUSTOM_SCENES_FILE, self.custom_scenes)
-                except OSError as e:
-                    self.custom_scenes.pop()
-                    messagebox.showerror("保存失败", f"AI 已生成回复，但无法保存到本机：{e}", parent=win)
-                    generate_btn.configure(state="normal", text="AI 生成并添加场景")
-                    status.configure(text="请检查本机文件权限后重试。")
-                    return
-                self.scenes.append(scene)
-                self.category.set("全部场景")
-                self.category_combo.configure(values=["全部场景"] + sorted({s["group"] for s in self.scenes}))
-                self._refresh_scene_list()
-                new_index = len(self.scenes) - 1
-                self._select_scene(new_index)
-                self.status_label.configure(text=f"AI 已生成并保存新场景：{title}")
-                messagebox.showinfo("添加成功", "AI 已生成两种回复和沟通分析，新场景已保存到本机。下次启动仍会保留。", parent=win)
-                win.destroy()
+                save_and_add(scene, title)
 
             def on_error(err):
-                generate_btn.configure(state="normal", text="重新生成")
+                generate_btn.configure(state="normal", text="AI 生成并添加场景")
                 status.configure(text="生成失败。请检查 API 设置、网络和 DeepSeek 账户余额。")
                 messagebox.showerror("AI 生成失败", err, parent=win)
 
@@ -1299,6 +1436,27 @@ class SocialReplyTrainer:
         if not isinstance(result, dict) or any(not isinstance(result.get(k), str) or not result[k].strip() for k in required):
             raise RuntimeError("AI 返回的数据缺少必要字段。请点击重新生成再试一次。")
         return {k: result[k].strip() for k in required}
+
+    def _request_ai_scene(self, api_key, model, description):
+        user_content = (
+            f"请根据下面的描述生成一个完整的社交训练场景。\n\n"
+            f"用户想要的场景：{description}\n\n"
+            "请按系统要求只返回 JSON，所有内容使用简体中文。"
+        )
+        result = self._request_ai_json(api_key, model, SCENE_GENERATOR_PROMPT, user_content, 1800, 0.8)
+        required = ("group", "title", "trigger", "extra", "soft", "firm", "bad", "rule")
+        if not isinstance(result, dict):
+            raise RuntimeError("AI 返回的场景格式无法识别，请重试。")
+        scene = {}
+        for key in required:
+            value = result.get(key)
+            if key == "extra":
+                scene[key] = value.strip() if isinstance(value, str) else ""
+            else:
+                if not isinstance(value, str) or not value.strip():
+                    raise RuntimeError("AI 返回的场景缺少必要字段，请重试。")
+                scene[key] = value.strip()
+        return scene
 
     def _request_ai_score(self, api_key, model, scene, response):
         score_prompt = """你是一位审慎、支持性的中文沟通教练。请评估用户写出的回复是否适合给定的真实社交情景。
