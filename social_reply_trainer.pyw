@@ -8,12 +8,13 @@ import threading
 import urllib.request
 import urllib.error
 from pathlib import Path
+import math
 
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home() / ".config"))) / "SocialReplyTrainer"
 SETTINGS_FILE = APP_DIR / "settings.json"
 CUSTOM_SCENES_FILE = APP_DIR / "custom_scenes.json"
 SCENE_OVERRIDES_FILE = APP_DIR / "scene_overrides.json"
-APP_VERSION = "2.5"
+APP_VERSION = "2.6"
 
 # This prompt is embedded in the program and is also provided as AI_PROMPT.md.
 SYSTEM_PROMPT = r"""你是“真实社交回复训练器”的沟通教练。你的任务是根据用户提供的真实社交情景，生成自然、可直接说出口的中文回复。
@@ -199,6 +200,42 @@ FONT_INPUT = (FONT_FAMILY, 15)
 FONT_LABEL = (FONT_FAMILY, 14, "bold")
 FONT_TITLE = (FONT_FAMILY, 25, "bold")
 
+
+class RoundedPanel(tk.Frame):
+    """A lightweight Tk frame with a rounded background drawn on a canvas."""
+    def __init__(self, master, fill=CARD, outline=BORDER, radius=16, canvas_bg=BG, **kwargs):
+        super().__init__(master, bg=canvas_bg, bd=0, highlightthickness=0, **kwargs)
+        self._fill = fill
+        self._outline = outline
+        self._radius = radius
+        self._canvas = tk.Canvas(self, bg=canvas_bg, bd=0, highlightthickness=0)
+        self._canvas.place(x=0, y=0, relwidth=1, relheight=1)
+        self.bind("<Configure>", self._draw_panel, add="+")
+
+    def _draw_panel(self, _event=None):
+        width = self.winfo_width()
+        height = self.winfo_height()
+        if width < 3 or height < 3:
+            return
+        inset = 1
+        radius = min(self._radius, (min(width, height) - inset * 2) / 2)
+        bounds = (inset, inset, width - inset, height - inset)
+        corners = (
+            (bounds[0] + radius, bounds[1] + radius, 180),
+            (bounds[2] - radius, bounds[1] + radius, 270),
+            (bounds[2] - radius, bounds[3] - radius, 0),
+            (bounds[0] + radius, bounds[3] - radius, 90),
+        )
+        points = []
+        for center_x, center_y, start_angle in corners:
+            for step in range(9):
+                angle = math.radians(start_angle + step * 11.25)
+                points.extend((center_x + radius * math.cos(angle), center_y + radius * math.sin(angle)))
+        self._canvas.delete("panel")
+        self._canvas.create_polygon(points, fill=self._fill, outline=self._outline, width=1, tags="panel")
+        self._canvas.lower()
+
+
 class SocialReplyTrainer:
     def __init__(self, root):
         self.root = root
@@ -281,7 +318,9 @@ class SocialReplyTrainer:
         sidebar = tk.Frame(splitter, bg=SIDEBAR, width=286)
         brand = tk.Frame(sidebar, bg=SIDEBAR)
         brand.pack(fill="x", padx=22, pady=(26, 28))
-        tk.Label(brand, text="R", bg=BLUE, fg="white", font=(FONT_FAMILY, 17, "bold"), width=2, height=1).pack(side="left", padx=(0, 11))
+        brand_mark = RoundedPanel(brand, fill=BLUE, outline=BLUE, radius=15, canvas_bg=SIDEBAR)
+        brand_mark.pack(side="left", padx=(0, 11))
+        tk.Label(brand_mark, text="R", bg=BLUE, fg="white", font=(FONT_FAMILY, 17, "bold"), width=2, height=1).pack(padx=5, pady=5)
         brand_text = tk.Frame(brand, bg=SIDEBAR)
         brand_text.pack(side="left", fill="x", expand=True)
         tk.Label(brand_text, text="REAL TALK", bg=SIDEBAR, fg=SIDEBAR_TEXT, font=(FONT_FAMILY, 13, "bold")).pack(anchor="w")
@@ -342,12 +381,14 @@ class SocialReplyTrainer:
 
         self.scene_heading = tk.Frame(self.content, bg=BG)
         self.scene_heading.grid(row=0, column=0, sticky="ew", pady=(0, 14))
-        self.category_badge = tk.Label(self.scene_heading, text="同事", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 12, "bold"), padx=12, pady=6)
-        self.category_badge.pack(anchor="w", pady=(0, 7))
+        self.category_badge_surface = RoundedPanel(self.scene_heading, fill=ACCENT_LIGHT, outline=ACCENT_LIGHT, radius=20, canvas_bg=BG)
+        self.category_badge_surface.pack(anchor="w", pady=(0, 7))
+        self.category_badge = tk.Label(self.category_badge_surface, text="同事", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 12, "bold"), padx=12, pady=6)
+        self.category_badge.pack()
         self.scene_title = tk.Label(self.scene_heading, text="场景标题", bg=BG, fg=TEXT, font=(FONT_FAMILY, 22, "bold"), anchor="w", justify="left", wraplength=900)
         self.scene_title.pack(anchor="w", fill="x")
 
-        situation_card = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        situation_card = RoundedPanel(self.content, fill=CARD, outline=BORDER, radius=18)
         situation_card.grid(row=1, column=0, sticky="ew", pady=(0, 14))
         situation_inner = tk.Frame(situation_card, bg=CARD)
         situation_inner.pack(fill="x", padx=19, pady=16)
@@ -355,7 +396,7 @@ class SocialReplyTrainer:
         self.situation_label = tk.Label(situation_inner, text="", bg=CARD, fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=900)
         self.situation_label.pack(fill="x", anchor="w")
 
-        self.practice_frame = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        self.practice_frame = RoundedPanel(self.content, fill=CARD, outline=BORDER, radius=20)
         self.practice_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 12))
         self.practice_frame.columnconfigure(0, weight=1)
         self.practice_frame.rowconfigure(2, weight=1)
@@ -365,10 +406,12 @@ class SocialReplyTrainer:
         tk.Label(practice_head, text="先自己练一句", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 17, "bold")).grid(row=0, column=0, sticky="w")
         tk.Label(practice_head, text="STEP 01", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 11, "bold"), padx=9, pady=4).grid(row=0, column=1, sticky="e")
         tk.Label(self.practice_frame, text="写下你此刻最想说的话。完成后让 AI 从表达、边界、语气和情境四方面给出反馈。", bg=CARD, fg=MUTED, font=(FONT_FAMILY, 13), anchor="w", justify="left", wraplength=900).grid(row=1, column=0, sticky="ew", padx=21, pady=(0, 11))
-        self.practice_text = tk.Text(self.practice_frame, height=5, wrap="word", relief="flat", bd=0, bg="#FAFBFE", fg=TEXT,
+        self.practice_input_surface = RoundedPanel(self.practice_frame, fill="#FAFBFE", outline=BORDER, radius=14, canvas_bg=CARD)
+        self.practice_input_surface.grid(row=2, column=0, sticky="nsew", padx=21, pady=(0, 12))
+        self.practice_text = tk.Text(self.practice_input_surface, height=5, wrap="word", relief="flat", bd=0, bg="#FAFBFE", fg=TEXT,
                                      insertbackground=BLUE, font=FONT_INPUT, padx=15, pady=13, undo=True,
-                                     highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
-        self.practice_text.grid(row=2, column=0, sticky="nsew", padx=21, pady=(0, 12))
+                                     highlightthickness=0)
+        self.practice_text.pack(fill="both", expand=True, padx=7, pady=6)
         self.practice_text.bind("<KeyRelease>", self._on_practice_edit)
         practice_actions = tk.Frame(self.practice_frame, bg=CARD)
         practice_actions.grid(row=3, column=0, sticky="ew", padx=21, pady=(0, 17))
@@ -379,7 +422,7 @@ class SocialReplyTrainer:
         self.score_status = tk.Label(practice_actions, text="仅用于练习，建议结合真实关系与场合判断。", bg=CARD, fg=MUTED, font=(FONT_FAMILY, 11))
         self.score_status.pack(side="right", padx=(8, 0))
 
-        self.score_frame = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        self.score_frame = RoundedPanel(self.content, fill=CARD, outline=BORDER, radius=20)
         score_head = tk.Frame(self.score_frame, bg=CARD)
         score_head.pack(fill="x", padx=19, pady=(14, 8))
         tk.Label(score_head, text="AI 练习反馈", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 14, "bold")).pack(side="left")
@@ -393,7 +436,7 @@ class SocialReplyTrainer:
         self.score_dimension_labels = {}
         self.score_dimension_bars = {}
         for col, (key, label) in enumerate((("clarity", "表达清晰"), ("boundary", "边界明确"), ("tone", "语气合适"), ("context", "情境判断"))):
-            cell = tk.Frame(score_grid, bg="#F6F7FB")
+            cell = RoundedPanel(score_grid, fill="#F6F7FB", outline="#F6F7FB", radius=12, canvas_bg=CARD)
             cell.grid(row=0, column=col, sticky="ew", padx=(0 if col == 0 else 5, 0))
             score_grid.columnconfigure(col, weight=1)
             tk.Label(cell, text=label, bg="#F6F7FB", fg=MUTED, font=(FONT_FAMILY, 11)).pack(anchor="w", padx=9, pady=(8, 1))
@@ -414,7 +457,7 @@ class SocialReplyTrainer:
         self.reference_btn = ttk.Button(reference_actions, text="查看参考回复  ↓", style="Soft.TButton", command=self._toggle_reference)
         self.reference_btn.pack(side="right")
 
-        self.reference_frame = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        self.reference_frame = RoundedPanel(self.content, fill=CARD, outline=BORDER, radius=18)
         reference_head = tk.Frame(self.reference_frame, bg=CARD)
         reference_head.pack(fill="x", padx=17, pady=(13, 6))
         tk.Label(reference_head, text="参考回复", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 14, "bold")).pack(side="left")
@@ -442,7 +485,7 @@ class SocialReplyTrainer:
         self.reference_frame.grid(row=5, column=0, sticky="ew", pady=(0, 9))
         self.reference_frame.grid_remove()
 
-        self.analysis_frame = tk.Frame(self.content, bg="#F6F7FB", highlightbackground=BORDER, highlightthickness=1)
+        self.analysis_frame = RoundedPanel(self.content, fill="#F6F7FB", outline=BORDER, radius=16)
         self.analysis_frame.grid(row=6, column=0, sticky="ew", pady=(0, 10))
         self.rule_title = tk.Label(self.analysis_frame, text="这句话的沟通原则", bg="#F6F7FB", fg=GREEN, font=FONT_LABEL, anchor="w")
         self.rule_title.pack(fill="x", padx=15, pady=(12, 4))
@@ -634,14 +677,18 @@ class SocialReplyTrainer:
         title_entry.grid(row=1, column=1, sticky="ew", pady=(0, 13), ipady=6)
 
         ttk.Label(form, text="具体情景", style="Field.TLabel").grid(row=2, column=0, sticky="nw", padx=(0, 16), pady=(0, 13))
-        situation = tk.Text(form, height=10, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
-        situation.grid(row=2, column=1, sticky="nsew", pady=(0, 13))
+        situation_surface = RoundedPanel(form, fill=CARD, outline=BORDER, radius=12, canvas_bg=BG)
+        situation_surface.grid(row=2, column=1, sticky="nsew", pady=(0, 13))
+        situation = tk.Text(situation_surface, height=10, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=0)
+        situation.pack(fill="both", expand=True, padx=7, pady=6)
         form.rowconfigure(2, weight=1)
         situation.insert("1.0", "例如：对方说了什么？你原本想怎么回应？你担心什么后果？")
 
         ttk.Label(form, text="额外要求（可选）", style="Field.TLabel").grid(row=3, column=0, sticky="nw", padx=(0, 16), pady=(0, 13))
-        extra = tk.Text(form, height=3, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
-        extra.grid(row=3, column=1, sticky="ew", pady=(0, 13))
+        extra_surface = RoundedPanel(form, fill=CARD, outline=BORDER, radius=12, canvas_bg=BG)
+        extra_surface.grid(row=3, column=1, sticky="ew", pady=(0, 13))
+        extra = tk.Text(extra_surface, height=3, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=0)
+        extra.pack(fill="both", expand=True, padx=7, pady=6)
         extra.insert("1.0", "例如：不想把关系闹僵；考虑对方是我的上级；回复不要太长。")
 
         status = ttk.Label(outer, text="提示：首次使用前，请点击主窗口的“API 设置”填入新的 DeepSeek API 密钥。", style="Muted.TLabel", wraplength=830)
@@ -756,14 +803,18 @@ class SocialReplyTrainer:
         title_entry.grid(row=1, column=1, sticky="ew", pady=(0, 13), ipady=6)
 
         ttk.Label(form, text="具体情景", style="Field.TLabel").grid(row=2, column=0, sticky="nw", padx=(0, 16), pady=(0, 13))
-        situation = tk.Text(form, height=10, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
-        situation.grid(row=2, column=1, sticky="nsew", pady=(0, 13))
+        situation_surface = RoundedPanel(form, fill=CARD, outline=BORDER, radius=12, canvas_bg=BG)
+        situation_surface.grid(row=2, column=1, sticky="nsew", pady=(0, 13))
+        situation = tk.Text(situation_surface, height=10, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=0)
+        situation.pack(fill="both", expand=True, padx=7, pady=6)
         situation.insert("1.0", scene["trigger"])
         form.rowconfigure(2, weight=1)
 
         ttk.Label(form, text="额外要求（可选）", style="Field.TLabel").grid(row=3, column=0, sticky="nw", padx=(0, 16), pady=(0, 13))
-        extra = tk.Text(form, height=3, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
-        extra.grid(row=3, column=1, sticky="ew", pady=(0, 13))
+        extra_surface = RoundedPanel(form, fill=CARD, outline=BORDER, radius=12, canvas_bg=BG)
+        extra_surface.grid(row=3, column=1, sticky="ew", pady=(0, 13))
+        extra = tk.Text(extra_surface, height=3, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=0)
+        extra.pack(fill="both", expand=True, padx=7, pady=6)
         extra.insert("1.0", scene.get("extra", ""))
 
         status = ttk.Label(outer, text="分类、标题和具体情景不能为空。", style="Muted.TLabel")
