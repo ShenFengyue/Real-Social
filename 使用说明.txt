@@ -1,0 +1,34 @@
+真实社交回复训练器（AI增强版）
+
+功能
+- 内置 15 个社交训练场景。
+- 可新增自定义情景，并通过 DeepSeek API 生成“温和但清晰”“坚定直接”两种回复，以及常见误区和沟通原则。
+- 自定义情景会保存在本机，下次打开仍然存在。
+- 字体较大；支持一键复制和先写自己的回复再对照练习。
+- 仅使用 Python 标准库，无需安装额外 Python 包。
+
+运行方法（Windows）
+1. 安装 Python 3（安装时勾选 Add Python to PATH；多数情况下也可直接双击 .pyw）。
+2. 解压 ZIP。
+3. 双击 social_reply_trainer.pyw。
+4. 首次使用 AI 功能，点击右上角“API 设置”，填入你在 DeepSeek 控制台新建的 API 密钥，模型默认 deepseek-flash。
+5. 点击“新增场景 / AI 生成”，填写标题和情景，选择分类，点击“AI 生成并添加场景”。
+
+密钥安全
+- 请不要把 API 密钥直接写进源码或分享给别人。
+- 程序会把密钥保存在当前 Windows 用户配置目录：%APPDATA%\SocialReplyTrainer\settings.json。
+- 该配置文件为本机普通文件，请不要把它上传、发给别人或放进公开仓库。
+- 如果 API 密钥曾经发到聊天、截图或公开渠道，建议在 DeepSeek 控制台撤销并重新创建。
+- AI 调用需要联网，且可能产生费用；请在 DeepSeek 控制台查看余额、限额和调用价格。
+
+本机数据位置
+- API 设置：%APPDATA%\SocialReplyTrainer\settings.json
+- 自定义场景：%APPDATA%\SocialReplyTrainer\custom_scenes.json
+
+排错
+- 401：密钥无效、已撤销或填错。请新建密钥并重新保存。
+- 402：账户余额或账户状态问题。
+- 429：请求频率、额度或限速问题。
+- 网络错误：确认网络可以访问 https://api.deepseek.com。
+
+注意：这是一款社交沟通练习工具，AI 生成内容是建议而非保证正确的答案。涉及现实人身安全、权力差异或高风险冲突时，请结合具体环境谨慎判断。
