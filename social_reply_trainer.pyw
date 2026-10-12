@@ -178,14 +178,22 @@ SCENES = [
     },
 ]
 
-BG = "#F4F6FA"
+BG = "#F5F6F4"
 CARD = "#FFFFFF"
-TEXT = "#172033"
-MUTED = "#687386"
-BLUE = "#315EFB"
-BORDER = "#DFE4EE"
-GREEN = "#147D54"
-RED = "#B54747"
+TEXT = "#202722"
+MUTED = "#68736D"
+BLUE = "#416B5A"
+BORDER = "#E2E7E3"
+GREEN = "#416B5A"
+RED = "#A34F4A"
+ACCENT_LIGHT = "#EAF1ED"
+FONT_FAMILY = "Microsoft YaHei UI"
+FONT_BODY = (FONT_FAMILY, 14)
+FONT_INPUT = (FONT_FAMILY, 15)
+FONT_LABEL = (FONT_FAMILY, 14, "bold")
+FONT_TITLE = (FONT_FAMILY, 25, "bold")
+FONT_SCENE_TITLE = (FONT_FAMILY, 20, "bold")
+FONT_REPLY = (FONT_FAMILY, 16)
 
 class SocialReplyTrainer:
     def __init__(self, root):
@@ -220,27 +228,31 @@ class SocialReplyTrainer:
             pass
         style.configure("TFrame", background=BG)
         style.configure("Card.TFrame", background=CARD)
-        style.configure("TLabel", background=BG, foreground=TEXT, font=("Microsoft YaHei UI", 12))
-        style.configure("Muted.TLabel", background=BG, foreground=MUTED, font=("Microsoft YaHei UI", 11))
-        style.configure("Title.TLabel", background=BG, foreground=TEXT, font=("Microsoft YaHei UI", 26, "bold"))
-        style.configure("SubTitle.TLabel", background=BG, foreground=MUTED, font=("Microsoft YaHei UI", 12))
-        style.configure("CardTitle.TLabel", background=CARD, foreground=TEXT, font=("Microsoft YaHei UI", 14, "bold"))
-        style.configure("CardText.TLabel", background=CARD, foreground=TEXT, font=("Microsoft YaHei UI", 14), wraplength=760, justify="left")
-        style.configure("TButton", font=("Microsoft YaHei UI", 12), padding=(15, 10))
-        style.configure("Accent.TButton", background=BLUE, foreground="white", borderwidth=0, padding=(16, 11))
-        style.map("Accent.TButton", background=[("active", "#2449D8"), ("pressed", "#1E40AF")])
-        style.configure("Soft.TButton", background="#E9EEFF", foreground=BLUE, borderwidth=0, padding=(16, 11))
-        style.map("Soft.TButton", background=[("active", "#DDE5FF")])
-        style.configure("TCombobox", padding=6, font=("Microsoft YaHei UI", 12))
-        style.configure("TRadiobutton", background=CARD, foreground=TEXT, font=("Microsoft YaHei UI", 12))
+        style.configure("TLabel", background=BG, foreground=TEXT, font=FONT_BODY)
+        style.configure("Muted.TLabel", background=BG, foreground=MUTED, font=FONT_BODY)
+        style.configure("Title.TLabel", background=BG, foreground=TEXT, font=FONT_TITLE)
+        style.configure("SubTitle.TLabel", background=BG, foreground=MUTED, font=FONT_BODY)
+        style.configure("CardTitle.TLabel", background=CARD, foreground=TEXT, font=FONT_LABEL)
+        style.configure("Field.TLabel", background=BG, foreground=TEXT, font=FONT_LABEL)
+        style.configure("CardText.TLabel", background=CARD, foreground=TEXT, font=FONT_BODY, wraplength=760, justify="left")
+        style.configure("TButton", font=FONT_BODY, padding=(16, 11), borderwidth=0)
+        style.map("TButton", background=[("active", "#EDF1EE")])
+        style.configure("Accent.TButton", background=BLUE, foreground="white", font=FONT_LABEL, borderwidth=0, padding=(18, 12))
+        style.map("Accent.TButton", background=[("active", "#355948"), ("pressed", "#2D4D3F")])
+        style.configure("Soft.TButton", background=ACCENT_LIGHT, foreground=BLUE, borderwidth=0, padding=(16, 11))
+        style.map("Soft.TButton", background=[("active", "#DDE9E1")])
+        style.configure("TCombobox", padding=8, font=FONT_BODY, fieldbackground=CARD, foreground=TEXT, arrowsize=16)
+        style.configure("TEntry", padding=8, font=FONT_INPUT, fieldbackground=CARD, foreground=TEXT)
+        style.configure("TCheckbutton", background=BG, foreground=TEXT, font=FONT_BODY)
+        style.configure("TRadiobutton", background=CARD, foreground=TEXT, font=FONT_BODY)
         style.configure("TSeparator", background=BORDER)
 
     def _build_ui(self):
-        outer = ttk.Frame(self.root, padding=(26, 22, 26, 18))
+        outer = ttk.Frame(self.root, padding=(30, 26, 30, 20))
         outer.pack(fill="both", expand=True)
 
         header = ttk.Frame(outer)
-        header.pack(fill="x", pady=(0, 17))
+        header.pack(fill="x", pady=(0, 23))
         title_block = ttk.Frame(header)
         title_block.pack(side="left", fill="x", expand=True)
         ttk.Label(title_block, text="真实社交回复训练器", style="Title.TLabel").pack(anchor="w")
@@ -259,22 +271,22 @@ class SocialReplyTrainer:
         sidebar = tk.Frame(body, bg=CARD, highlightbackground=BORDER, highlightthickness=1, width=255)
         sidebar.grid(row=0, column=0, sticky="nsew", padx=(0, 15))
         sidebar.grid_propagate(False)
-        tk.Label(sidebar, text="选择训练场景", bg=CARD, fg=TEXT, font=("Microsoft YaHei UI", 14, "bold")).pack(anchor="w", padx=15, pady=(17, 9))
+        tk.Label(sidebar, text="选择训练场景", bg=CARD, fg=TEXT, font=FONT_LABEL).pack(anchor="w", padx=17, pady=(19, 12))
         self.category_combo = ttk.Combobox(sidebar, textvariable=self.category, state="readonly", values=["全部场景"] + sorted({s["group"] for s in self.scenes}), width=22)
         self.category_combo.pack(fill="x", padx=13, pady=(0, 10))
         self.category_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_scene_list())
         list_wrap = tk.Frame(sidebar, bg=CARD)
         list_wrap.pack(fill="both", expand=True, padx=(10, 6), pady=(0, 9))
         self.scene_list = tk.Listbox(list_wrap, activestyle="none", selectmode="single", relief="flat", borderwidth=0,
-                                     bg=CARD, fg=TEXT, selectbackground="#E9EEFF", selectforeground=BLUE,
-                                     font=("Microsoft YaHei UI", 12), highlightthickness=0,
+                                     bg=CARD, fg=TEXT, selectbackground=ACCENT_LIGHT, selectforeground=BLUE,
+                                     font=FONT_BODY, highlightthickness=0,
                                      yscrollcommand=None, exportselection=False)
         scrollbar = ttk.Scrollbar(list_wrap, orient="vertical", command=self.scene_list.yview)
         self.scene_list.configure(yscrollcommand=scrollbar.set)
         self.scene_list.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         self.scene_list.bind("<<ListboxSelect>>", self._on_scene_select)
-        tk.Label(sidebar, text="先看情景，再选择一种回复风格。", bg=CARD, fg=MUTED, font=("Microsoft YaHei UI", 11), wraplength=230, justify="left").pack(anchor="w", padx=15, pady=(0, 15))
+        tk.Label(sidebar, text="先看情景，再选择一种回复风格。", bg=CARD, fg=MUTED, font=FONT_BODY, wraplength=230, justify="left").pack(anchor="w", padx=17, pady=(0, 17))
 
         self.content = ttk.Frame(body)
         self.content.grid(row=0, column=1, sticky="nsew")
@@ -283,15 +295,15 @@ class SocialReplyTrainer:
 
         self.scene_heading = ttk.Frame(self.content)
         self.scene_heading.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        self.category_badge = tk.Label(self.scene_heading, text="同事", bg="#E9EEFF", fg=BLUE, font=("Microsoft YaHei UI", 11, "bold"), padx=9, pady=4)
+        self.category_badge = tk.Label(self.scene_heading, text="同事", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 12, "bold"), padx=11, pady=5)
         self.category_badge.pack(side="left", padx=(0, 10))
-        self.scene_title = tk.Label(self.scene_heading, text="场景标题", bg=BG, fg=TEXT, font=("Microsoft YaHei UI", 18, "bold"), anchor="w", justify="left", wraplength=760)
+        self.scene_title = tk.Label(self.scene_heading, text="场景标题", bg=BG, fg=TEXT, font=FONT_SCENE_TITLE, anchor="w", justify="left", wraplength=760)
         self.scene_title.pack(side="left", fill="x", expand=True)
 
         self._card_label(self.content, "情景还原", 1, pady=(0, 6))
         self.situation_card = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
         self.situation_card.grid(row=2, column=0, sticky="ew", pady=(0, 13))
-        self.situation_label = tk.Label(self.situation_card, text="", bg=CARD, fg=TEXT, font=("Microsoft YaHei UI", 14), justify="left", anchor="w", wraplength=760, padx=15, pady=14)
+        self.situation_label = tk.Label(self.situation_card, text="", bg=CARD, fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=760, padx=19, pady=18)
         self.situation_label.pack(fill="x")
 
         response_head = ttk.Frame(self.content)
@@ -300,12 +312,12 @@ class SocialReplyTrainer:
         self.tone_frame = tk.Frame(response_head, bg=BG)
         self.tone_frame.pack(side="right")
         self.soft_btn = tk.Radiobutton(self.tone_frame, text="温和但清晰", value="soft", variable=self.tone, command=self._update_reply,
-                                       indicatoron=False, selectcolor="#E9EEFF", bg=BG, fg=MUTED, activebackground=BG,
-                                       font=("Microsoft YaHei UI", 11), padx=12, pady=7, bd=0, highlightthickness=0)
+                                       indicatoron=False, selectcolor=ACCENT_LIGHT, bg=BG, fg=MUTED, activebackground=BG,
+                                       font=FONT_BODY, padx=14, pady=9, bd=0, highlightthickness=0)
         self.soft_btn.pack(side="left", padx=(0, 4))
         self.firm_btn = tk.Radiobutton(self.tone_frame, text="坚定直接", value="firm", variable=self.tone, command=self._update_reply,
-                                       indicatoron=False, selectcolor="#E9EEFF", bg=BG, fg=MUTED, activebackground=BG,
-                                       font=("Microsoft YaHei UI", 11), padx=12, pady=7, bd=0, highlightthickness=0)
+                                       indicatoron=False, selectcolor=ACCENT_LIGHT, bg=BG, fg=MUTED, activebackground=BG,
+                                       font=FONT_BODY, padx=14, pady=9, bd=0, highlightthickness=0)
         self.firm_btn.pack(side="left")
 
         self.reply_card = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
@@ -313,8 +325,8 @@ class SocialReplyTrainer:
         self.reply_card.rowconfigure(0, weight=1)
         self.reply_card.columnconfigure(0, weight=1)
         self.reply_text = tk.Text(self.reply_card, height=5, wrap="word", relief="flat", bd=0, bg=CARD, fg=TEXT,
-                                  font=("Microsoft YaHei UI", 15), padx=19, pady=18, spacing1=4, spacing3=5,
-                                  selectbackground="#DCE5FF", selectforeground=TEXT)
+                                  font=FONT_REPLY, padx=22, pady=20, spacing1=5, spacing3=6,
+                                  selectbackground="#DCE9E2", selectforeground=TEXT)
         self.reply_text.grid(row=0, column=0, sticky="nsew")
         self.reply_text.configure(state="disabled")
 
@@ -327,26 +339,26 @@ class SocialReplyTrainer:
         self.practice_btn = ttk.Button(buttons, text="先自己练一句 ↓", command=self._toggle_practice)
         self.practice_btn.pack(side="right")
 
-        self.analysis_frame = tk.Frame(self.content, bg="#F0F7F4", highlightbackground="#D5EADF", highlightthickness=1)
+        self.analysis_frame = tk.Frame(self.content, bg="#F0F5F1", highlightbackground="#DCE7E0", highlightthickness=1)
         self.analysis_frame.grid(row=6, column=0, sticky="ew", pady=(0, 10))
         self.analysis_frame.columnconfigure(0, weight=1)
-        self.rule_title = tk.Label(self.analysis_frame, text="这句话的核心逻辑", bg="#F0F7F4", fg=GREEN, font=("Microsoft YaHei UI", 12, "bold"), anchor="w")
+        self.rule_title = tk.Label(self.analysis_frame, text="这句话的核心逻辑", bg="#F0F5F1", fg=GREEN, font=FONT_LABEL, anchor="w")
         self.rule_title.pack(fill="x", padx=13, pady=(11, 4))
-        self.rule_label = tk.Label(self.analysis_frame, text="", bg="#F0F7F4", fg=TEXT, font=("Microsoft YaHei UI", 13), justify="left", anchor="w", wraplength=760)
+        self.rule_label = tk.Label(self.analysis_frame, text="", bg="#F0F5F1", fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=760)
         self.rule_label.pack(fill="x", padx=13, pady=(0, 9))
-        tk.Frame(self.analysis_frame, bg="#D5EADF", height=1).pack(fill="x", padx=13, pady=1)
-        tk.Label(self.analysis_frame, text="尽量避免", bg="#F0F7F4", fg=RED, font=("Microsoft YaHei UI", 12, "bold"), anchor="w").pack(fill="x", padx=13, pady=(8, 4))
-        self.bad_label = tk.Label(self.analysis_frame, text="", bg="#F0F7F4", fg=TEXT, font=("Microsoft YaHei UI", 13), justify="left", anchor="w", wraplength=760)
+        tk.Frame(self.analysis_frame, bg="#DCE7E0", height=1).pack(fill="x", padx=13, pady=1)
+        tk.Label(self.analysis_frame, text="尽量避免", bg="#F0F5F1", fg=RED, font=FONT_LABEL, anchor="w").pack(fill="x", padx=13, pady=(8, 4))
+        self.bad_label = tk.Label(self.analysis_frame, text="", bg="#F0F5F1", fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=760)
         self.bad_label.pack(fill="x", padx=13, pady=(0, 12))
         self.analysis_frame.grid_remove()
 
         self.practice_frame = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
         self.practice_frame.grid(row=7, column=0, sticky="ew", pady=(0, 8))
-        tk.Label(self.practice_frame, text="先自己写一句（可选）", bg=CARD, fg=TEXT, font=("Microsoft YaHei UI", 13, "bold"), anchor="w").pack(fill="x", padx=13, pady=(12, 5))
-        tk.Label(self.practice_frame, text="不用追求完美。先写出你第一反应想说的话，再对照推荐回复。", bg=CARD, fg=MUTED, font=("Microsoft YaHei UI", 11), anchor="w", justify="left", wraplength=760).pack(fill="x", padx=13, pady=(0, 8))
+        tk.Label(self.practice_frame, text="先自己写一句（可选）", bg=CARD, fg=TEXT, font=FONT_LABEL, anchor="w").pack(fill="x", padx=16, pady=(14, 6))
+        tk.Label(self.practice_frame, text="不用追求完美。先写出你第一反应想说的话，再对照推荐回复。", bg=CARD, fg=MUTED, font=FONT_BODY, anchor="w", justify="left", wraplength=760).pack(fill="x", padx=16, pady=(0, 9))
         self.practice_text = tk.Text(self.practice_frame, height=3, wrap="word", relief="solid", bd=1, bg="#FBFCFE", fg=TEXT,
-                                     font=("Microsoft YaHei UI", 13), padx=11, pady=10, undo=True)
-        self.practice_text.pack(fill="x", padx=13, pady=(0, 9))
+                                     font=FONT_INPUT, padx=13, pady=12, undo=True)
+        self.practice_text.pack(fill="x", padx=16, pady=(0, 10))
         practice_actions = tk.Frame(self.practice_frame, bg=CARD)
         practice_actions.pack(fill="x", padx=13, pady=(0, 11))
         ttk.Button(practice_actions, text="清空练习", command=self._clear_practice).pack(side="left")
@@ -408,8 +420,8 @@ class SocialReplyTrainer:
         self.reply_text.delete("1.0", tk.END)
         self.reply_text.insert("1.0", reply)
         self.reply_text.configure(state="disabled")
-        self.soft_btn.configure(fg=BLUE if self.tone.get() == "soft" else MUTED, font=("Microsoft YaHei UI", 11, "bold" if self.tone.get() == "soft" else "normal"))
-        self.firm_btn.configure(fg=BLUE if self.tone.get() == "firm" else MUTED, font=("Microsoft YaHei UI", 11, "bold" if self.tone.get() == "firm" else "normal"))
+        self.soft_btn.configure(fg=BLUE if self.tone.get() == "soft" else MUTED, font=(FONT_FAMILY, 14, "bold" if self.tone.get() == "soft" else "normal"))
+        self.firm_btn.configure(fg=BLUE if self.tone.get() == "firm" else MUTED, font=(FONT_FAMILY, 14, "bold" if self.tone.get() == "firm" else "normal"))
 
     def _update_analysis(self):
         s = self.scenes[self.selected_index]
@@ -422,27 +434,27 @@ class SocialReplyTrainer:
         win.transient(self.root)
         win.grab_set()
         win.configure(bg=BG)
-        win.geometry("690x400")
-        win.resizable(False, False)
+        win.geometry("720x440")
+        win.minsize(680, 410)
 
-        outer = ttk.Frame(win, padding=24)
+        outer = ttk.Frame(win, padding=28)
         outer.pack(fill="both", expand=True)
         ttk.Label(outer, text="连接 DeepSeek", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="密钥只保存在这台电脑的用户配置目录，不会写入程序或 ZIP 压缩包。", style="SubTitle.TLabel", wraplength=630).pack(anchor="w", pady=(5, 18))
+        ttk.Label(outer, text="密钥只保存在这台电脑的用户配置目录，不会写入程序或 ZIP 压缩包。", style="SubTitle.TLabel", wraplength=650).pack(anchor="w", pady=(7, 20))
 
         ttk.Label(outer, text="API 密钥", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 5))
         key_var = tk.StringVar(value=self.settings.get("api_key", ""))
-        key_entry = ttk.Entry(outer, textvariable=key_var, show="•", font=("Microsoft YaHei UI", 13))
-        key_entry.pack(fill="x", ipady=5)
+        key_entry = ttk.Entry(outer, textvariable=key_var, show="•", font=FONT_INPUT)
+        key_entry.pack(fill="x", ipady=7)
         show_var = tk.BooleanVar(value=False)
         def toggle_key():
             key_entry.configure(show="" if show_var.get() else "•")
-        ttk.Checkbutton(outer, text="显示密钥", variable=show_var, command=toggle_key).pack(anchor="w", pady=(4, 12))
+        ttk.Checkbutton(outer, text="显示密钥", variable=show_var, command=toggle_key).pack(anchor="w", pady=(6, 15))
 
         ttk.Label(outer, text="模型名称", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 5))
         model_var = tk.StringVar(value=self.settings.get("model", DEFAULT_MODEL))
-        model_entry = ttk.Entry(outer, textvariable=model_var, font=("Microsoft YaHei UI", 12))
-        model_entry.pack(fill="x", ipady=4)
+        model_entry = ttk.Entry(outer, textvariable=model_var, font=FONT_INPUT)
+        model_entry.pack(fill="x", ipady=6)
         ttk.Label(outer, text="默认使用 deepseek-flash。API 调用会产生费用，请在 DeepSeek 控制台查看余额与价格。", style="Muted.TLabel", wraplength=630).pack(anchor="w", pady=(8, 12))
 
         actions = ttk.Frame(outer)
@@ -472,40 +484,40 @@ class SocialReplyTrainer:
         win.transient(self.root)
         win.grab_set()
         win.configure(bg=BG)
-        win.geometry("850x720")
-        win.minsize(760, 650)
+        win.geometry("900x720")
+        win.minsize(820, 650)
 
-        outer = ttk.Frame(win, padding=22)
+        outer = ttk.Frame(win, padding=(30, 27, 30, 24))
         outer.pack(fill="both", expand=True)
         ttk.Label(outer, text="新增社交场景", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="写清楚发生了什么、你和对方是什么关系，以及你担心什么。AI 会生成两种回复和沟通分析。", style="SubTitle.TLabel", wraplength=790).pack(anchor="w", pady=(5, 15))
+        ttk.Label(outer, text="写清楚发生了什么、你和对方是什么关系，以及你担心什么。AI 会生成两种回复和沟通分析。", style="SubTitle.TLabel", wraplength=830).pack(anchor="w", pady=(8, 20))
 
         form = ttk.Frame(outer)
         form.pack(fill="both", expand=True)
         form.columnconfigure(1, weight=1)
-        ttk.Label(form, text="场景分类", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 12), pady=(0, 10))
+        ttk.Label(form, text="场景分类", style="Field.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 16), pady=(0, 13))
         group_var = tk.StringVar(value="日常社交")
-        group_combo = ttk.Combobox(form, textvariable=group_var, values=["同事", "工作", "父母", "朋友", "社交", "两性社交", "日常社交", "朋友与同事", "朋友与家人", "自定义"], width=18)
-        group_combo.grid(row=0, column=1, sticky="ew", pady=(0, 10), ipady=3)
+        group_combo = ttk.Combobox(form, textvariable=group_var, values=["同事", "工作", "父母", "朋友", "社交", "两性社交", "日常社交", "朋友与同事", "朋友与家人", "自定义"], width=18, font=FONT_INPUT)
+        group_combo.grid(row=0, column=1, sticky="ew", pady=(0, 13), ipady=4)
 
-        ttk.Label(form, text="场景标题", style="CardTitle.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 12), pady=(0, 10))
+        ttk.Label(form, text="场景标题", style="Field.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 16), pady=(0, 13))
         title_var = tk.StringVar()
-        title_entry = ttk.Entry(form, textvariable=title_var, font=("Microsoft YaHei UI", 13))
-        title_entry.grid(row=1, column=1, sticky="ew", pady=(0, 10), ipady=5)
+        title_entry = ttk.Entry(form, textvariable=title_var, font=FONT_INPUT)
+        title_entry.grid(row=1, column=1, sticky="ew", pady=(0, 13), ipady=6)
 
-        ttk.Label(form, text="具体情景", style="CardTitle.TLabel").grid(row=2, column=0, sticky="nw", padx=(0, 12), pady=(0, 10))
-        situation = tk.Text(form, height=10, wrap="word", font=("Microsoft YaHei UI", 13), bg="#FFFFFF", fg=TEXT, relief="solid", bd=1, padx=10, pady=9, undo=True)
-        situation.grid(row=2, column=1, sticky="nsew", pady=(0, 10))
+        ttk.Label(form, text="具体情景", style="Field.TLabel").grid(row=2, column=0, sticky="nw", padx=(0, 16), pady=(0, 13))
+        situation = tk.Text(form, height=10, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
+        situation.grid(row=2, column=1, sticky="nsew", pady=(0, 13))
         form.rowconfigure(2, weight=1)
         situation.insert("1.0", "例如：对方说了什么？你原本想怎么回应？你担心什么后果？")
 
-        ttk.Label(form, text="额外要求（可选）", style="CardTitle.TLabel").grid(row=3, column=0, sticky="nw", padx=(0, 12), pady=(0, 10))
-        extra = tk.Text(form, height=3, wrap="word", font=("Microsoft YaHei UI", 12), bg="#FFFFFF", fg=TEXT, relief="solid", bd=1, padx=10, pady=8, undo=True)
-        extra.grid(row=3, column=1, sticky="ew", pady=(0, 10))
+        ttk.Label(form, text="额外要求（可选）", style="Field.TLabel").grid(row=3, column=0, sticky="nw", padx=(0, 16), pady=(0, 13))
+        extra = tk.Text(form, height=3, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
+        extra.grid(row=3, column=1, sticky="ew", pady=(0, 13))
         extra.insert("1.0", "例如：不想把关系闹僵；考虑对方是我的上级；回复不要太长。")
 
-        status = ttk.Label(outer, text="提示：首次使用前，请点击主窗口的“API 设置”填入新的 DeepSeek API 密钥。", style="Muted.TLabel", wraplength=790)
-        status.pack(anchor="w", pady=(7, 10))
+        status = ttk.Label(outer, text="提示：首次使用前，请点击主窗口的“API 设置”填入新的 DeepSeek API 密钥。", style="Muted.TLabel", wraplength=830)
+        status.pack(anchor="w", pady=(8, 13))
 
         actions = ttk.Frame(outer)
         actions.pack(fill="x")
@@ -690,10 +702,6 @@ class SocialReplyTrainer:
 
 def main():
     root = tk.Tk()
-    try:
-        root.tk.call("tk", "scaling", 1.15)
-    except tk.TclError:
-        pass
     SocialReplyTrainer(root)
     # Windows 下启动时最大化，给更大的字体和换行内容留出空间。
     try:
