@@ -264,6 +264,8 @@ class SocialReplyTrainer:
         style.map("Soft.TButton", background=[("active", "#E5E3FF")])
         style.configure("TCombobox", padding=8, font=FONT_BODY, fieldbackground=CARD, foreground=TEXT, arrowsize=16)
         style.configure("Sidebar.TCombobox", padding=8, font=FONT_BODY, fieldbackground=SIDEBAR_PANEL, background=SIDEBAR_PANEL, foreground=SIDEBAR_TEXT, arrowsize=16)
+        style.configure("Score.Horizontal.TProgressbar", troughcolor="#E8EAF2", background=BLUE,
+                        bordercolor="#E8EAF2", lightcolor=BLUE, darkcolor=BLUE, thickness=9)
         style.configure("TEntry", padding=8, font=FONT_INPUT, fieldbackground=CARD, foreground=TEXT)
         style.configure("TCheckbutton", background=BG, foreground=TEXT, font=FONT_BODY)
         style.configure("TRadiobutton", background=CARD, foreground=TEXT, font=FONT_BODY)
@@ -383,9 +385,13 @@ class SocialReplyTrainer:
         tk.Label(score_head, text="AI 练习反馈", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 14, "bold")).pack(side="left")
         self.score_total_label = tk.Label(score_head, text="— / 100", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 15, "bold"), padx=11, pady=5)
         self.score_total_label.pack(side="right")
+        self.score_total_bar = ttk.Progressbar(self.score_frame, style="Score.Horizontal.TProgressbar",
+                                               maximum=100, mode="determinate")
+        self.score_total_bar.pack(fill="x", padx=19, pady=(0, 12))
         score_grid = tk.Frame(self.score_frame, bg=CARD)
         score_grid.pack(fill="x", padx=19, pady=(0, 9))
         self.score_dimension_labels = {}
+        self.score_dimension_bars = {}
         for col, (key, label) in enumerate((("clarity", "表达清晰"), ("boundary", "边界明确"), ("tone", "语气合适"), ("context", "情境判断"))):
             cell = tk.Frame(score_grid, bg="#F6F7FB")
             cell.grid(row=0, column=col, sticky="ew", padx=(0 if col == 0 else 5, 0))
@@ -394,6 +400,9 @@ class SocialReplyTrainer:
             value = tk.Label(cell, text="— / 25", bg="#F6F7FB", fg=TEXT, font=(FONT_FAMILY, 13, "bold"))
             value.pack(anchor="w", padx=9, pady=(0, 8))
             self.score_dimension_labels[key] = value
+            bar = ttk.Progressbar(cell, style="Score.Horizontal.TProgressbar", maximum=25, mode="determinate")
+            bar.pack(fill="x", padx=9, pady=(0, 9))
+            self.score_dimension_bars[key] = bar
         self.score_feedback_label = tk.Label(self.score_frame, text="", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 13), justify="left", anchor="w", wraplength=900)
         self.score_feedback_label.pack(fill="x", padx=19, pady=(0, 14))
         self.score_frame.grid(row=3, column=0, sticky="ew", pady=(0, 12))
@@ -509,9 +518,12 @@ class SocialReplyTrainer:
         self.reference_btn.configure(text="查看参考回复  ↓")
         self.analysis_btn.configure(text="沟通原则与常见误区  ↓")
         self.score_total_label.configure(text="— / 100")
+        self.score_total_bar.configure(value=0)
         self.score_feedback_label.configure(text="")
         for label in self.score_dimension_labels.values():
             label.configure(text="— / 25")
+        for bar in self.score_dimension_bars.values():
+            bar.configure(value=0)
         self.score_status.configure(text="先写下你的版本，再获取 AI 反馈。")
         self.status_label.configure(text=f"场景 {index + 1} / {len(self.scenes)}  ·  练习目标：表达清楚，也尊重彼此。")
 
@@ -984,8 +996,10 @@ class SocialReplyTrainer:
             self.practice_text.configure(state="normal")
             self.score_result = result
             self.score_total_label.configure(text=f"{result['total']} / 100")
+            self.score_total_bar.configure(value=result["total"])
             for key, label in self.score_dimension_labels.items():
                 label.configure(text=f"{result[key]} / 25")
+                self.score_dimension_bars[key].configure(value=result[key])
             self.score_feedback_label.configure(
                 text=f"做得好的地方：{result['strength']}\n\n可以再试试：{result['suggestion']}\n\n一个可选版本：{result['rewrite']}"
             )
