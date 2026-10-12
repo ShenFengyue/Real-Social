@@ -3,17 +3,19 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import json
-import os
 import threading
 import urllib.request
 import urllib.error
 from pathlib import Path
 import math
+from datetime import datetime
 
-APP_DIR = Path(os.environ.get("APPDATA", str(Path.home() / ".config"))) / "SocialReplyTrainer"
+PROGRAM_DIR = Path(__file__).resolve().parent
+APP_DIR = PROGRAM_DIR / "data"
 SETTINGS_FILE = APP_DIR / "settings.json"
 CUSTOM_SCENES_FILE = APP_DIR / "custom_scenes.json"
 SCENE_OVERRIDES_FILE = APP_DIR / "scene_overrides.json"
+HISTORY_FILE = APP_DIR / "history.json"
 APP_VERSION = "2.6"
 
 # This prompt is embedded in the program and is also provided as AI_PROMPT.md.
@@ -181,17 +183,17 @@ SCENES = [
     },
 ]
 
-BG = "#F4F6FB"
+BG = "#F3F5F9"
 CARD = "#FFFFFF"
 TEXT = "#182033"
-MUTED = "#697386"
-BLUE = "#635BDB"
-BORDER = "#E4E8F0"
-GREEN = "#18836A"
-RED = "#B34F5A"
-ACCENT_LIGHT = "#EFEEFF"
+MUTED = "#70798C"
+BLUE = "#5D56E8"
+BORDER = "#E5E9F1"
+GREEN = "#187C68"
+RED = "#B14E5C"
+ACCENT_LIGHT = "#F0EFFF"
 SIDEBAR = "#FFFFFF"
-SIDEBAR_PANEL = "#F6F7FB"
+SIDEBAR_PANEL = "#F5F6FA"
 SIDEBAR_TEXT = TEXT
 SIDEBAR_MUTED = MUTED
 FONT_FAMILY = "Microsoft YaHei UI"
@@ -208,14 +210,26 @@ class RoundedPanel(tk.Frame):
         self._fill = fill
         self._outline = outline
         self._radius = radius
+        self._shape_id = None
+        self._last_size = None
         self._canvas = tk.Canvas(self, bg=canvas_bg, bd=0, highlightthickness=0)
         self._canvas.place(x=0, y=0, relwidth=1, relheight=1)
         self.bind("<Configure>", self._draw_panel, add="+")
+
+    def set_appearance(self, fill, outline=None):
+        outline = fill if outline is None else outline
+        if (fill, outline) == (self._fill, self._outline):
+            return
+        self._fill, self._outline = fill, outline
+        if self._shape_id is not None:
+            self._canvas.itemconfigure(self._shape_id, fill=fill, outline=outline)
 
     def _draw_panel(self, _event=None):
         width = self.winfo_width()
         height = self.winfo_height()
         if width < 3 or height < 3:
+            return
+        if (width, height) == self._last_size and self._shape_id is not None:
             return
         inset = 1
         radius = min(self._radius, (min(width, height) - inset * 2) / 2)
@@ -231,9 +245,51 @@ class RoundedPanel(tk.Frame):
             for step in range(9):
                 angle = math.radians(start_angle + step * 11.25)
                 points.extend((center_x + radius * math.cos(angle), center_y + radius * math.sin(angle)))
-        self._canvas.delete("panel")
-        self._canvas.create_polygon(points, fill=self._fill, outline=self._outline, width=1, tags="panel")
-        self._canvas.lower()
+        if self._shape_id is None:
+            self._shape_id = self._canvas.create_polygon(points, fill=self._fill, outline=self._outline, width=1, tags="panel")
+        else:
+            self._canvas.coords(self._shape_id, *points)
+        self._last_size = (width, height)
+
+
+class RoundedProgressBar(tk.Canvas):
+    """A small Canvas progress bar with consistently rounded ends on Windows."""
+    def __init__(self, master, maximum=100, value=0, height=10, fill=BLUE,
+                 trough="#E8EAF2", canvas_bg=CARD, **kwargs):
+        # Canvas otherwise requests Tk's default width (~378 px), which can
+        # force score rows wider than their parent and clip the trailing items.
+        super().__init__(master, width=1, height=height, bg=canvas_bg, bd=0,
+                         highlightthickness=0, **kwargs)
+        self.maximum = max(1, maximum)
+        self.value = 0
+        self.fill = fill
+        self.trough = trough
+        self.bind("<Configure>", self._draw, add="+")
+        self.set_value(value)
+
+    def set_value(self, value):
+        self.value = min(self.maximum, max(0, value))
+        self._draw()
+
+    def _rounded_rect(self, x1, y1, x2, y2, color):
+        if x2 <= x1 or y2 <= y1:
+            return
+        radius = min((x2 - x1) / 2, (y2 - y1) / 2)
+        self.create_rectangle(x1 + radius, y1, x2 - radius, y2, fill=color, outline="")
+        self.create_rectangle(x1, y1 + radius, x2, y2 - radius, fill=color, outline="")
+        self.create_oval(x1, y1, x1 + radius * 2, y1 + radius * 2, fill=color, outline="")
+        self.create_oval(x2 - radius * 2, y1, x2, y1 + radius * 2, fill=color, outline="")
+        self.create_oval(x1, y2 - radius * 2, x1 + radius * 2, y2, fill=color, outline="")
+        self.create_oval(x2 - radius * 2, y2 - radius * 2, x2, y2, fill=color, outline="")
+
+    def _draw(self, _event=None):
+        width, height = self.winfo_width(), self.winfo_height()
+        if width < 2 or height < 2:
+            return
+        self.delete("all")
+        self._rounded_rect(0, 0, width, height, self.trough)
+        if self.value:
+            self._rounded_rect(0, 0, width * self.value / self.maximum, height, self.fill)
 
 
 class SocialReplyTrainer:
@@ -266,6 +322,22 @@ class SocialReplyTrainer:
         self.settings = _load_json(SETTINGS_FILE, {})
         if not isinstance(self.settings, dict):
             self.settings = {}
+        saved_history = _load_json(HISTORY_FILE, [])
+        self.history = []
+        if isinstance(saved_history, list):
+            for record in saved_history:
+                if not isinstance(record, dict) or not isinstance(record.get("scene"), dict) or not isinstance(record.get("response"), str):
+                    continue
+                result = record.get("result")
+                score_keys = ("clarity", "boundary", "tone", "context", "total")
+                text_keys = ("strength", "suggestion", "rewrite")
+                if (not isinstance(result, dict)
+                        or any(isinstance(result.get(key), bool) or not isinstance(result.get(key), int) for key in score_keys)
+                        or any(not isinstance(result.get(key), str) for key in text_keys)):
+                    continue
+                self.history.append(record)
+        self.practice_states = {}
+        self._active_scene_index = None
         self.selected_index = 0
         self.tone = tk.StringVar(value="soft")
         self.category = tk.StringVar(value="全部场景")
@@ -273,6 +345,9 @@ class SocialReplyTrainer:
         self.show_reference = False
         self.is_scoring = False
         self.score_result = None
+        self._last_highlighted_scene = None
+        self._content_wrap_length = None
+        self._pane_resize_active = False
         self._setup_styles()
         self._build_ui()
         self._refresh_scene_list()
@@ -280,10 +355,14 @@ class SocialReplyTrainer:
 
     def _setup_styles(self):
         style = ttk.Style()
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
+        available_themes = style.theme_names()
+        for theme in ("vista", "xpnative", "clam"):
+            if theme in available_themes:
+                try:
+                    style.theme_use(theme)
+                    break
+                except tk.TclError:
+                    continue
         style.configure("TFrame", background=BG)
         style.configure("Card.TFrame", background=CARD)
         style.configure("TLabel", background=BG, foreground=TEXT, font=FONT_BODY)
@@ -293,29 +372,39 @@ class SocialReplyTrainer:
         style.configure("CardTitle.TLabel", background=CARD, foreground=TEXT, font=FONT_LABEL)
         style.configure("Field.TLabel", background=BG, foreground=TEXT, font=FONT_LABEL)
         style.configure("CardText.TLabel", background=CARD, foreground=TEXT, font=FONT_BODY, wraplength=760, justify="left")
-        style.configure("TButton", font=FONT_BODY, padding=(16, 11), borderwidth=0, background=CARD, foreground=TEXT)
-        style.map("TButton", background=[("active", "#F0F2F8")])
-        style.configure("Accent.TButton", background=BLUE, foreground="white", font=FONT_LABEL, borderwidth=0, padding=(20, 13))
-        style.map("Accent.TButton", background=[("active", "#5149C5"), ("pressed", "#463FAE")])
-        style.configure("Soft.TButton", background=ACCENT_LIGHT, foreground=BLUE, borderwidth=0, padding=(16, 11))
-        style.map("Soft.TButton", background=[("active", "#E5E3FF")])
-        style.configure("TCombobox", padding=8, font=FONT_BODY, fieldbackground=CARD, foreground=TEXT, arrowsize=16)
-        style.configure("Sidebar.TCombobox", padding=8, font=FONT_BODY, fieldbackground=SIDEBAR_PANEL, background=SIDEBAR_PANEL, foreground=SIDEBAR_TEXT, arrowsize=16)
+        style.configure("TButton", font=(FONT_FAMILY, 12, "bold"), padding=(15, 10), borderwidth=0, relief="flat", background=CARD, foreground=TEXT, focusthickness=0)
+        style.map("TButton", background=[("disabled", "#F1F2F6"), ("pressed", "#E9ECF3"), ("active", "#F3F4F8")], foreground=[("disabled", "#A0A6B2")])
+        style.configure("Accent.TButton", background=BLUE, foreground="white", font=(FONT_FAMILY, 13, "bold"), borderwidth=0, relief="flat", padding=(21, 13), focusthickness=0)
+        style.map("Accent.TButton", background=[("disabled", "#B9B5F4"), ("pressed", "#4942C8"), ("active", "#514AD7")], foreground=[("disabled", "#FFFFFF")])
+        style.configure("Soft.TButton", background=ACCENT_LIGHT, foreground=BLUE, borderwidth=0, relief="flat", padding=(16, 10), focusthickness=0)
+        style.map("Soft.TButton", background=[("disabled", "#F4F2FF"), ("pressed", "#E2DFFF"), ("active", "#E9E6FF")], foreground=[("disabled", "#AAA5DD")])
+        style.configure("TCombobox", padding=(11, 9), font=FONT_BODY, fieldbackground=CARD, foreground=TEXT, arrowsize=15, bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER)
+        style.map("TCombobox", fieldbackground=[("readonly", CARD), ("focus", CARD)], selectbackground=[("readonly", CARD)], selectforeground=[("readonly", TEXT)])
+        style.configure("Sidebar.TCombobox", padding=(11, 9), font=FONT_BODY, fieldbackground=SIDEBAR_PANEL, background=SIDEBAR_PANEL, foreground=SIDEBAR_TEXT, arrowsize=15, bordercolor=SIDEBAR_PANEL, lightcolor=SIDEBAR_PANEL, darkcolor=SIDEBAR_PANEL)
         style.configure("Score.Horizontal.TProgressbar", troughcolor="#E8EAF2", background=BLUE,
                         bordercolor="#E8EAF2", lightcolor=BLUE, darkcolor=BLUE, thickness=9)
-        style.configure("TEntry", padding=8, font=FONT_INPUT, fieldbackground=CARD, foreground=TEXT)
-        style.configure("TCheckbutton", background=BG, foreground=TEXT, font=FONT_BODY)
-        style.configure("TRadiobutton", background=CARD, foreground=TEXT, font=FONT_BODY)
+        style.configure("TEntry", padding=(11, 9), font=FONT_INPUT, fieldbackground=CARD, foreground=TEXT, bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER)
+        style.map("TEntry", bordercolor=[("focus", BLUE)], lightcolor=[("focus", BLUE)], darkcolor=[("focus", BLUE)])
+        style.configure("TCheckbutton", background=BG, foreground=TEXT, font=FONT_BODY, padding=(4, 5))
+        style.configure("TRadiobutton", background=CARD, foreground=TEXT, font=FONT_BODY, padding=(8, 5))
         style.configure("TSeparator", background=BORDER)
+        style.configure("Vertical.TScrollbar", gripcount=0, background="#E8EBF2", troughcolor=BG, bordercolor=BG, arrowcolor=MUTED, relief="flat", width=9)
+        style.map("Vertical.TScrollbar", background=[("active", "#D5D9E4")])
+        style.configure("History.Treeview", font=(FONT_FAMILY, 12), rowheight=34, background=CARD, fieldbackground=CARD, foreground=TEXT, borderwidth=0)
+        style.configure("History.Treeview.Heading", font=(FONT_FAMILY, 11, "bold"), background="#F6F7FB", foreground=MUTED, padding=(8, 9), relief="flat")
+        style.map("History.Treeview", background=[("selected", ACCENT_LIGHT)], foreground=[("selected", BLUE)])
 
     def _build_ui(self):
         shell = tk.Frame(self.root, bg=BG)
         shell.pack(fill="both", expand=True)
         splitter = tk.PanedWindow(shell, orient=tk.HORIZONTAL, bg=BORDER, bd=0, relief="flat",
                                   sashwidth=7, sashrelief="flat", opaqueresize=True, showhandle=False)
+        self.splitter = splitter
+        splitter.bind("<ButtonPress-1>", self._begin_pane_resize, add="+")
+        splitter.bind("<ButtonRelease-1>", self._schedule_finish_pane_resize, add="+")
         splitter.pack(fill="both", expand=True)
 
-        sidebar = tk.Frame(splitter, bg=SIDEBAR, width=286)
+        sidebar = tk.Frame(splitter, bg=SIDEBAR, width=300)
         brand = tk.Frame(sidebar, bg=SIDEBAR)
         brand.pack(fill="x", padx=22, pady=(26, 28))
         brand_mark = RoundedPanel(brand, fill=BLUE, outline=BLUE, radius=15, canvas_bg=SIDEBAR)
@@ -326,27 +415,33 @@ class SocialReplyTrainer:
         tk.Label(brand_text, text="REAL TALK", bg=SIDEBAR, fg=SIDEBAR_TEXT, font=(FONT_FAMILY, 13, "bold")).pack(anchor="w")
         tk.Label(brand_text, text="社交沟通练习", bg=SIDEBAR, fg=SIDEBAR_MUTED, font=(FONT_FAMILY, 11)).pack(anchor="w", pady=(2, 0))
 
-        tk.Label(sidebar, text="场景库", bg=SIDEBAR, fg=SIDEBAR_MUTED, font=(FONT_FAMILY, 12, "bold")).pack(anchor="w", padx=22, pady=(0, 9))
+        library_head = tk.Frame(sidebar, bg=SIDEBAR)
+        library_head.pack(fill="x", padx=21, pady=(0, 9))
+        tk.Label(library_head, text="场景库", bg=SIDEBAR, fg=TEXT, font=(FONT_FAMILY, 13, "bold")).pack(side="left")
+        self.scene_count_label = tk.Label(library_head, text="", bg=SIDEBAR, fg=MUTED, font=(FONT_FAMILY, 10))
+        self.scene_count_label.pack(side="right")
         self.category_combo = ttk.Combobox(sidebar, textvariable=self.category, state="readonly", values=["全部场景"] + sorted({s["group"] for s in self.scenes}), style="Sidebar.TCombobox")
-        self.category_combo.pack(fill="x", padx=17, pady=(0, 12))
+        self.category_combo.pack(fill="x", padx=17, pady=(0, 10))
         self.category_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_scene_list())
         list_wrap = tk.Frame(sidebar, bg=SIDEBAR)
-        list_wrap.pack(fill="both", expand=True, padx=(12, 7), pady=(0, 12))
-        self.scene_list = tk.Listbox(list_wrap, activestyle="none", selectmode="single", relief="flat", borderwidth=0,
-                                     bg=SIDEBAR, fg=SIDEBAR_TEXT, selectbackground=ACCENT_LIGHT, selectforeground=BLUE,
-                                     font=(FONT_FAMILY, 13), highlightthickness=0, yscrollcommand=None,
-                                     exportselection=False, selectborderwidth=0)
-        scrollbar = ttk.Scrollbar(list_wrap, orient="vertical", command=self.scene_list.yview)
-        self.scene_list.configure(yscrollcommand=scrollbar.set)
-        self.scene_list.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        self.scene_list.bind("<<ListboxSelect>>", self._on_scene_select)
-        self.scene_list.configure(font=(FONT_FAMILY, 13), activestyle="none")
+        list_wrap.pack(fill="both", expand=True, padx=(13, 8), pady=(0, 12))
+        self.scene_list_canvas = tk.Canvas(list_wrap, bg=SIDEBAR, highlightthickness=0, bd=0)
+        self.scene_list_canvas.pack(side="left", fill="both", expand=True)
+        scrollbar = ttk.Scrollbar(list_wrap, orient="vertical", command=self.scene_list_canvas.yview)
+        self.scene_list_canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y", padx=(4, 0))
+        self.scene_list = tk.Frame(self.scene_list_canvas, bg=SIDEBAR)
+        self.scene_list_window = self.scene_list_canvas.create_window((0, 0), window=self.scene_list, anchor="nw")
+        self._scene_title_wrap = None
+        self._canvas_window_widths = {"scene_list": None, "content": None}
+        self.scene_list.bind("<Configure>", self._on_scene_list_configure)
+        self.scene_list_canvas.bind("<Configure>", lambda event: self._queue_canvas_window_resize("scene_list", event.width))
+        self.scene_list_canvas.bind("<MouseWheel>", self._on_scene_list_mousewheel)
         tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(0, 14))
         ttk.Button(sidebar, text="＋  新增训练场景", style="Soft.TButton", command=self._open_add_scene).pack(fill="x", padx=17, pady=(0, 8))
         self.edit_scene_btn = ttk.Button(sidebar, text="编辑当前场景", command=self._open_edit_scene)
         self.edit_scene_btn.pack(fill="x", padx=17, pady=(0, 8))
-        tk.Label(sidebar, text="把真实情景变成一次练习", bg=SIDEBAR, fg=SIDEBAR_MUTED, font=(FONT_FAMILY, 11)).pack(anchor="w", padx=21, pady=(0, 17))
+        tk.Label(sidebar, text="把真实情景变成一次练习", bg=SIDEBAR, fg=SIDEBAR_MUTED, font=(FONT_FAMILY, 10)).pack(anchor="w", padx=21, pady=(0, 17))
 
         workspace = tk.Frame(splitter, bg=BG)
         workspace.columnconfigure(0, weight=1)
@@ -359,6 +454,7 @@ class SocialReplyTrainer:
         tk.Label(topbar_left, text="先说出你的版本，再和 AI 一起打磨。", bg=BG, fg=MUTED, font=FONT_BODY).pack(anchor="w", pady=(4, 0))
         top_actions = tk.Frame(topbar, bg=BG)
         top_actions.pack(side="right", anchor="ne", pady=(5, 0))
+        ttk.Button(top_actions, text="练习记录", command=self._open_history).pack(side="right", padx=(0, 8))
         ttk.Button(top_actions, text="API 设置", command=self._open_api_settings).pack(side="right")
 
         content_wrap = tk.Frame(workspace, bg=BG)
@@ -373,7 +469,7 @@ class SocialReplyTrainer:
         self.content = tk.Frame(content_wrap, bg=BG)
         self.content_window_id = self.content_canvas.create_window((0, 0), window=self.content, anchor="nw")
         self.content.bind("<Configure>", lambda _event: self.content_canvas.configure(scrollregion=self.content_canvas.bbox("all")))
-        self.content_canvas.bind("<Configure>", lambda event: self.content_canvas.itemconfigure(self.content_window_id, width=event.width))
+        self.content_canvas.bind("<Configure>", lambda event: self._queue_canvas_window_resize("content", event.width))
         self.content.bind("<Configure>", self._update_wrap_lengths, add="+")
         self.root.bind_all("<MouseWheel>", self._on_mousewheel)
         self.content.columnconfigure(0, weight=1)
@@ -415,7 +511,23 @@ class SocialReplyTrainer:
         self.practice_text.bind("<KeyRelease>", self._on_practice_edit)
         practice_actions = tk.Frame(self.practice_frame, bg=CARD)
         practice_actions.grid(row=3, column=0, sticky="ew", padx=21, pady=(0, 17))
-        self.score_btn = ttk.Button(practice_actions, text="AI 评价我的回复  →", style="Accent.TButton", command=self._score_practice)
+        self.score_btn = tk.Button(
+            practice_actions,
+            text="AI 评价我的回复  →",
+            command=self._score_practice,
+            font=(FONT_FAMILY, 13, "bold"),
+            bg=BLUE,
+            fg="#FFFFFF",
+            activebackground="#4942C8",
+            activeforeground="#FFFFFF",
+            disabledforeground="#FFFFFF",
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            padx=21,
+            pady=13,
+            cursor="hand2",
+        )
         self.score_btn.pack(side="left")
         self.clear_practice_btn = ttk.Button(practice_actions, text="清空", command=self._clear_practice)
         self.clear_practice_btn.pack(side="left", padx=(9, 0))
@@ -428,8 +540,8 @@ class SocialReplyTrainer:
         tk.Label(score_head, text="AI 练习反馈", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 14, "bold")).pack(side="left")
         self.score_total_label = tk.Label(score_head, text="— / 100", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 15, "bold"), padx=11, pady=5)
         self.score_total_label.pack(side="right")
-        self.score_total_bar = ttk.Progressbar(self.score_frame, style="Score.Horizontal.TProgressbar",
-                                               maximum=100, mode="determinate")
+        self.score_total_bar = RoundedProgressBar(self.score_frame, maximum=100, height=10,
+                                                  canvas_bg=CARD)
         self.score_total_bar.pack(fill="x", padx=19, pady=(0, 12))
         score_grid = tk.Frame(self.score_frame, bg=CARD)
         score_grid.pack(fill="x", padx=19, pady=(0, 9))
@@ -443,7 +555,7 @@ class SocialReplyTrainer:
             value = tk.Label(cell, text="— / 25", bg="#F6F7FB", fg=TEXT, font=(FONT_FAMILY, 13, "bold"))
             value.pack(anchor="w", padx=9, pady=(0, 8))
             self.score_dimension_labels[key] = value
-            bar = ttk.Progressbar(cell, style="Score.Horizontal.TProgressbar", maximum=25, mode="determinate")
+            bar = RoundedProgressBar(cell, maximum=25, height=8, canvas_bg="#F6F7FB")
             bar.pack(fill="x", padx=9, pady=(0, 9))
             self.score_dimension_bars[key] = bar
         self.score_feedback_label = tk.Label(self.score_frame, text="", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 13), justify="left", anchor="w", wraplength=900)
@@ -509,66 +621,370 @@ class SocialReplyTrainer:
         if inside_canvas:
             self.content_canvas.yview_scroll(int(-event.delta / 120), "units")
             return "break"
+        x = self.scene_list_canvas.winfo_rootx()
+        y = self.scene_list_canvas.winfo_rooty()
+        inside_scene_list = x <= event.x_root < x + self.scene_list_canvas.winfo_width() and y <= event.y_root < y + self.scene_list_canvas.winfo_height()
+        if inside_scene_list:
+            self.scene_list_canvas.yview_scroll(int(-event.delta / 120), "units")
+            return "break"
+
+    def _queue_canvas_window_resize(self, key, width):
+        if self._pane_resize_active:
+            return
+        canvas, window_id = {
+            "scene_list": (self.scene_list_canvas, self.scene_list_window),
+            "content": (self.content_canvas, self.content_window_id),
+        }[key]
+        width = max(1, (width // 4) * 4)
+        if self._canvas_window_widths[key] == width:
+            return
+        self._canvas_window_widths[key] = width
+        canvas.itemconfigure(window_id, width=width)
+
+    def _begin_pane_resize(self, event):
+        try:
+            sash_x, _ = self.splitter.sash_coord(0)
+        except (tk.TclError, IndexError):
+            return
+        sash_width = int(self.splitter.cget("sashwidth"))
+        if sash_x - 2 <= event.x <= sash_x + sash_width + 2:
+            self._pane_resize_active = True
+
+    def _schedule_finish_pane_resize(self, _event=None):
+        if self._pane_resize_active:
+            # Let PanedWindow process the release and its final sash position first.
+            self.root.after_idle(self._finish_pane_resize)
+
+    def _finish_pane_resize(self):
+        self._pane_resize_active = False
+        self._finish_canvas_window_resize()
+
+    def _finish_canvas_window_resize(self, _event=None):
+        for key, canvas, window_id in (
+            ("scene_list", self.scene_list_canvas, self.scene_list_window),
+            ("content", self.content_canvas, self.content_window_id),
+        ):
+            width = canvas.winfo_width()
+            if self._canvas_window_widths[key] != width:
+                self._canvas_window_widths[key] = width
+                canvas.itemconfigure(window_id, width=width)
 
     def _update_wrap_lengths(self, event):
-        wraplength = max(360, event.width - 36)
+        available_width = max(360, event.width - 36)
+        wraplength = max(360, (available_width // 32) * 32)
+        if wraplength == self._content_wrap_length:
+            return
+        self._content_wrap_length = wraplength
         for widget in (self.scene_title, self.situation_label, self.score_feedback_label, self.rule_label, self.bad_label):
             widget.configure(wraplength=wraplength)
+
+    def _on_scene_list_configure(self, event):
+        self.scene_list_canvas.configure(scrollregion=self.scene_list_canvas.bbox("all"))
+        available_width = max(145, event.width - 38)
+        title_wrap = max(145, (available_width // 16) * 16)
+        if title_wrap == self._scene_title_wrap:
+            return
+        self._scene_title_wrap = title_wrap
+        for item in getattr(self, "scene_item_cards", {}).values():
+            item["widgets"][3].configure(wraplength=title_wrap)
 
     def _refresh_scene_list(self):
         current = self.selected_index
         chosen = self.category.get()
         self.visible_indices = [i for i, s in enumerate(self.scenes) if chosen == "全部场景" or s["group"] == chosen]
-        self.scene_list.delete(0, tk.END)
+        for child in self.scene_list.winfo_children():
+            child.destroy()
+        self.scene_item_cards = {}
+        self.scene_count_label.configure(text=f"{len(self.visible_indices)} 个场景")
         for idx in self.visible_indices:
             s = self.scenes[idx]
-            self.scene_list.insert(tk.END, f"{s['group']}  ·  {s['title']}")
+            fill = ACCENT_LIGHT if idx == current else SIDEBAR
+            card = RoundedPanel(self.scene_list, fill=fill, outline=fill, radius=13, canvas_bg=SIDEBAR)
+            card.configure(cursor="hand2")
+            card._canvas.configure(cursor="hand2")
+            card.pack(fill="x", pady=3)
+            inner = tk.Frame(card, bg=fill)
+            inner.pack(fill="x", padx=12, pady=10)
+            row_head = tk.Frame(inner, bg=fill)
+            row_head.pack(fill="x", pady=(0, 4))
+            group_label = tk.Label(row_head, text=s["group"], bg=fill, fg=BLUE if idx == current else MUTED,
+                                   font=(FONT_FAMILY, 10, "bold"), anchor="w", cursor="hand2")
+            group_label.pack(side="left")
+            title_label = tk.Label(inner, text=s["title"], bg=fill, fg=TEXT, font=(FONT_FAMILY, 12, "bold"),
+                                   anchor="w", justify="left", wraplength=220, cursor="hand2")
+            title_label.pack(fill="x")
+            self.scene_item_cards[idx] = {"card": card, "widgets": (inner, row_head, group_label, title_label), "fill": fill}
+            for widget in (card, card._canvas, inner, row_head, group_label, title_label):
+                widget.bind("<Button-1>", lambda _event, scene_index=idx: self._on_scene_select(scene_index))
         if current not in self.visible_indices:
             current = self.visible_indices[0] if self.visible_indices else 0
         if self.visible_indices:
             self._select_scene(current)
 
-    def _on_scene_select(self, _event=None):
+    def _style_scene_card(self, index):
+        item = self.scene_item_cards.get(index)
+        if not item:
+            return
+        selected = index == self.selected_index
+        fill = ACCENT_LIGHT if selected else SIDEBAR
+        if item["fill"] == fill:
+            item["widgets"][2].configure(fg=BLUE if selected else MUTED)
+            return
+        item["fill"] = fill
+        item["card"].set_appearance(fill, fill)
+        for widget in item["widgets"]:
+            widget.configure(bg=fill)
+        item["widgets"][2].configure(fg=BLUE if selected else MUTED)
+
+    def _highlight_scene_cards(self):
+        indexes = {self._last_highlighted_scene, self.selected_index}
+        for index in indexes:
+            if index is None:
+                continue
+            self._style_scene_card(index)
+        self._last_highlighted_scene = self.selected_index
+
+    def _on_scene_list_mousewheel(self, event):
+        self.scene_list_canvas.yview_scroll(int(-event.delta / 120), "units")
+        return "break"
+
+    def _on_scene_select(self, index):
         if self.is_scoring:
             return
-        selection = self.scene_list.curselection()
-        if not selection:
-            return
-        pos = selection[0]
-        if pos < len(self.visible_indices):
-            self._select_scene(self.visible_indices[pos])
+        self._select_scene(index)
 
     def _select_scene(self, index):
+        if self._active_scene_index is not None:
+            self._save_current_practice_state()
         self.selected_index = index
+        self._active_scene_index = index
+        self._highlight_scene_cards()
         s = self.scenes[index]
         self.category_badge.configure(text=s["group"])
         self.scene_title.configure(text=s["title"])
         self.situation_label.configure(text=s["trigger"])
-        if index in self.visible_indices:
-            pos = self.visible_indices.index(index)
-            self.scene_list.selection_clear(0, tk.END)
-            self.scene_list.selection_set(pos)
-            self.scene_list.see(pos)
         self._update_reply()
         self._update_analysis()
+        state = self.practice_states.get(index, {})
         self.practice_text.delete("1.0", tk.END)
-        self.score_result = None
-        self.score_frame.grid_remove()
+        self.practice_text.insert("1.0", state.get("response", ""))
+        self.score_result = state.get("result")
+        self._render_score_result(self.score_result)
         self.reference_frame.grid_remove()
         self.analysis_frame.grid_remove()
         self.show_reference = False
         self.show_analysis = False
         self.reference_btn.configure(text="查看参考回复  ↓")
         self.analysis_btn.configure(text="沟通原则与常见误区  ↓")
-        self.score_total_label.configure(text="— / 100")
-        self.score_total_bar.configure(value=0)
-        self.score_feedback_label.configure(text="")
-        for label in self.score_dimension_labels.values():
-            label.configure(text="— / 25")
-        for bar in self.score_dimension_bars.values():
-            bar.configure(value=0)
-        self.score_status.configure(text="先写下你的版本，再获取 AI 反馈。")
+        self.score_btn.configure(text="再评一次  →" if self.score_result else "AI 评价我的回复  →")
+        self.score_status.configure(text="已恢复本场景的练习与评分。" if self.score_result else "先写下你的版本，再获取 AI 反馈。")
         self.status_label.configure(text=f"场景 {index + 1} / {len(self.scenes)}  ·  练习目标：表达清楚，也尊重彼此。")
+
+    def _save_current_practice_state(self):
+        if self._active_scene_index is None:
+            return
+        self.practice_states[self._active_scene_index] = {
+            "response": self.practice_text.get("1.0", "end-1c"),
+            "result": self.score_result,
+        }
+
+    def _render_score_result(self, result):
+        if not result:
+            self.score_frame.grid_remove()
+            self.score_total_label.configure(text="— / 100")
+            self.score_total_bar.set_value(0)
+            self.score_feedback_label.configure(text="")
+            for label in self.score_dimension_labels.values():
+                label.configure(text="— / 25")
+            for bar in self.score_dimension_bars.values():
+                bar.set_value(0)
+            return
+        self.score_total_label.configure(text=f"{result['total']} / 100")
+        self.score_total_bar.set_value(result["total"])
+        for key, label in self.score_dimension_labels.items():
+            label.configure(text=f"{result[key]} / 25")
+            self.score_dimension_bars[key].set_value(result[key])
+        self.score_feedback_label.configure(
+            text=f"做得好的地方：{result['strength']}\n\n可以再试试：{result['suggestion']}\n\n一个可选版本：{result['rewrite']}"
+        )
+        self.score_frame.grid()
+
+    def _open_history(self):
+        win = tk.Toplevel(self.root)
+        win.title("练习记录")
+        win.transient(self.root)
+        win.grab_set()
+        win.configure(bg=BG)
+        self._center_dialog(win, 940, 720, 820, 620)
+
+        outer = tk.Frame(win, bg=BG, padx=24, pady=22)
+        outer.pack(fill="both", expand=True)
+        tk.Label(outer, text="练习记录", bg=BG, fg=TEXT, font=FONT_TITLE).pack(anchor="w")
+        tk.Label(outer, text="每次成功的 AI 评分都会保存在本机；清空练习区不会删除这些记录。", bg=BG, fg=MUTED, font=FONT_BODY).pack(anchor="w", pady=(5, 15))
+        footer = tk.Frame(outer, bg=BG)
+        footer.pack(side="bottom", fill="x", pady=(14, 0))
+        ttk.Button(footer, text="关闭", command=win.destroy).pack(side="right")
+        body = tk.Frame(outer, bg=BG)
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(0, weight=4, minsize=300)
+        body.columnconfigure(1, weight=6, minsize=400)
+        body.rowconfigure(0, weight=1)
+
+        list_panel = RoundedPanel(body, fill=CARD, outline=BORDER, radius=16, canvas_bg=BG)
+        list_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        tree = ttk.Treeview(list_panel, columns=("time", "scene", "score"), show="headings", selectmode="browse", style="History.Treeview")
+        tree.heading("time", text="时间")
+        tree.heading("scene", text="场景")
+        tree.heading("score", text="得分")
+        tree.column("time", width=132, minwidth=108, stretch=False, anchor="w")
+        tree.column("scene", width=190, minwidth=130, stretch=True, anchor="w")
+        tree.column("score", width=70, minwidth=60, stretch=False, anchor="center")
+        tree_scroll = ttk.Scrollbar(list_panel, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=tree_scroll.set)
+        tree.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
+        tree_scroll.pack(side="right", fill="y", padx=(0, 8), pady=10)
+
+        detail = RoundedPanel(body, fill=CARD, outline=BORDER, radius=16, canvas_bg=BG)
+        detail.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        detail_body = tk.Frame(detail, bg=CARD)
+        detail_body.pack(fill="both", expand=True, padx=(10, 0), pady=10)
+        detail_canvas = tk.Canvas(detail_body, bg=CARD, highlightthickness=0, bd=0)
+        detail_scrollbar = ttk.Scrollbar(detail_body, orient="vertical", command=detail_canvas.yview)
+        detail_canvas.configure(yscrollcommand=detail_scrollbar.set)
+        detail_canvas.pack(side="left", fill="both", expand=True)
+        detail_scrollbar.pack(side="right", fill="y", padx=(4, 0))
+        detail_inner = tk.Frame(detail_canvas, bg=CARD, padx=8, pady=6)
+        detail_window = detail_canvas.create_window((0, 0), window=detail_inner, anchor="nw")
+        detail_inner.bind("<Configure>", lambda _event: detail_canvas.configure(scrollregion=detail_canvas.bbox("all")))
+
+        def resize_detail(event):
+            detail_canvas.itemconfigure(detail_window, width=event.width)
+            wrap = max(280, event.width - 48)
+            title_label.configure(wraplength=wrap)
+            situation_label.configure(wraplength=wrap)
+
+        detail_canvas.bind("<Configure>", resize_detail)
+        title_label = tk.Label(detail_inner, text="选择一条记录", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 17, "bold"), anchor="w", justify="left", wraplength=520)
+        title_label.pack(fill="x")
+        meta_label = tk.Label(detail_inner, text="", bg=CARD, fg=MUTED, font=(FONT_FAMILY, 11), anchor="w")
+        meta_label.pack(fill="x", pady=(5, 10))
+        situation_label = tk.Label(detail_inner, text="", bg=CARD, fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=520)
+        situation_label.pack(fill="x", pady=(0, 9))
+        tk.Label(detail_inner, text="场景参考与沟通要点", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 12, "bold"), anchor="w").pack(fill="x", pady=(0, 5))
+
+        def scroll_history_text(event, target):
+            target.yview_scroll(int(-event.delta / 120), "units")
+            return "break"
+
+        def make_history_text(height, font=FONT_BODY):
+            wrapper = tk.Frame(detail_inner, bg="#F6F7FB")
+            box = tk.Text(wrapper, height=height, wrap="word", relief="flat", bd=0,
+                          bg="#F6F7FB", fg=TEXT, font=font, padx=10, pady=8)
+            text_scrollbar = ttk.Scrollbar(wrapper, orient="vertical", command=box.yview)
+            box.configure(yscrollcommand=text_scrollbar.set)
+            box.pack(side="left", fill="both", expand=True)
+            text_scrollbar.pack(side="right", fill="y")
+            wrapper.pack(fill="x", pady=(0, 9))
+            box.configure(state="disabled")
+            box.bind("<MouseWheel>", lambda event, target=box: scroll_history_text(event, target))
+            return box
+
+        scene_notes_box = make_history_text(7, (FONT_FAMILY, 12))
+        score_label = tk.Label(detail_inner, text="", bg=CARD, fg=BLUE, font=(FONT_FAMILY, 13, "bold"), anchor="w")
+        score_label.pack(fill="x", pady=(0, 7))
+        bars = tk.Frame(detail_inner, bg=CARD)
+        bars.pack(fill="x", pady=(0, 7))
+        for key, label in (("clarity", "清晰"), ("boundary", "边界"), ("tone", "语气"), ("context", "情境")):
+            cell = tk.Frame(bars, bg=CARD)
+            cell.pack(side="left", fill="x", expand=True, padx=(0, 6))
+            tk.Label(cell, text=label, bg=CARD, fg=MUTED, font=(FONT_FAMILY, 10)).pack(anchor="w")
+            bar = RoundedProgressBar(cell, maximum=25, height=8, canvas_bg=CARD)
+            bar.pack(fill="x", pady=(3, 0))
+            setattr(bars, f"bar_{key}", bar)
+        tk.Label(detail_inner, text="我的练习回复", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 12, "bold"), anchor="w").pack(fill="x", pady=(3, 5))
+        response_box = make_history_text(5)
+        tk.Label(detail_inner, text="AI 评分反馈", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 12, "bold"), anchor="w").pack(fill="x", pady=(2, 5))
+        feedback_box = make_history_text(8, (FONT_FAMILY, 12))
+
+        def scroll_detail(event):
+            detail_canvas.yview_scroll(int(-event.delta / 120), "units")
+            return "break"
+
+        def bind_detail_wheel(widget):
+            if not isinstance(widget, tk.Text):
+                widget.bind("<MouseWheel>", scroll_detail, add="+")
+            for child in widget.winfo_children():
+                bind_detail_wheel(child)
+
+        bind_detail_wheel(detail_inner)
+        detail_canvas.bind("<MouseWheel>", scroll_detail, add="+")
+
+        record_indexes = {}
+        for index in range(len(self.history) - 1, -1, -1):
+            record = self.history[index]
+            scene = record["scene"]
+            result = record["result"]
+            timestamp = record.get("time", "")
+            short_time = timestamp.replace("T", " ")[:16] if timestamp else "时间未知"
+            item_id = f"record-{index}"
+            record_indexes[item_id] = index
+            tree.insert("", "end", iid=item_id, values=(short_time, scene.get("title", "未命名场景"), f"{result.get('total', '—')} / 100"))
+
+        def set_text(box, text):
+            box.configure(state="normal")
+            box.delete("1.0", tk.END)
+            box.insert("1.0", text)
+            box.configure(state="disabled")
+
+        def show_record(_event=None):
+            selection = tree.selection()
+            if not selection:
+                return
+            record = self.history[record_indexes[selection[0]]]
+            scene, result = dict(record["scene"]), record["result"]
+            missing_reference = [key for key in ("soft", "firm", "bad", "rule") if not scene.get(key)]
+            scene_index = record.get("scene_index")
+            if missing_reference and isinstance(scene_index, int) and 0 <= scene_index < len(self.scenes):
+                current_scene = self.scenes[scene_index]
+                identity_keys = ("group", "title", "trigger")
+                same_scenario = all(scene.get(key, "") == current_scene.get(key, "") for key in identity_keys)
+                if same_scenario:
+                    for key in missing_reference:
+                        scene[key] = current_scene.get(key, "")
+            title_label.configure(text=scene.get("title", "未命名场景"))
+            tone = {"soft": "温和练习", "firm": "坚定练习"}.get(record.get("tone"), "")
+            meta = [scene.get("group", "未分类"), record.get("time", "").replace("T", " ") or "时间未知"]
+            if tone:
+                meta.append(tone)
+            if any(scene.get(key) for key in missing_reference):
+                meta.append("场景参考来自当前场景库")
+            meta_label.configure(text="  ·  ".join(meta))
+            scenario_text = scene.get("trigger", "")
+            if scene.get("extra"):
+                scenario_text += f"\n\n额外要求：{scene['extra']}"
+            situation_label.configure(text=scenario_text)
+            scene_notes = []
+            for key, heading in (("soft", "温和参考回复"), ("firm", "坚定参考回复"),
+                                 ("rule", "沟通原则"), ("bad", "常见误区")):
+                if scene.get(key):
+                    scene_notes.append(f"{heading}\n{scene[key]}")
+            if not scene_notes:
+                scene_notes.append("这条较早的记录没有保存场景参考回复和沟通要点。")
+            set_text(scene_notes_box, "\n\n".join(scene_notes))
+            score_label.configure(text=f"总分  {result.get('total', '—')} / 100")
+            for key in ("clarity", "boundary", "tone", "context"):
+                getattr(bars, f"bar_{key}").set_value(result.get(key, 0))
+            set_text(response_box, f"我的练习：\n{record['response']}")
+            set_text(feedback_box, f"做得好的地方：{result.get('strength', '')}\n\n可以再试试：{result.get('suggestion', '')}\n\n一个可选版本：{result.get('rewrite', '')}")
+
+        tree.bind("<<TreeviewSelect>>", show_record)
+        if self.history:
+            first_item = next(iter(record_indexes))
+            tree.selection_set(first_item)
+            show_record()
+        else:
+            title_label.configure(text="还没有练习记录")
+            situation_label.configure(text="完成一次 AI 评分后，记录会自动保存在本机。")
 
     def _update_reply(self):
         s = self.scenes[self.selected_index]
@@ -610,7 +1026,7 @@ class SocialReplyTrainer:
         outer = ttk.Frame(win, padding=28)
         outer.pack(fill="both", expand=True)
         ttk.Label(outer, text="连接 DeepSeek", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="密钥只保存在这台电脑的用户配置目录，不会写入程序或 ZIP 压缩包。", style="SubTitle.TLabel", wraplength=650).pack(anchor="w", pady=(7, 20))
+        ttk.Label(outer, text="密钥保存在程序目录的 data 文件夹中。分享程序文件夹前，请先移除该文件夹。", style="SubTitle.TLabel", wraplength=650).pack(anchor="w", pady=(7, 20))
 
         ttk.Label(outer, text="API 密钥", style="CardTitle.TLabel").pack(anchor="w", pady=(0, 5))
         key_var = tk.StringVar(value=self.settings.get("api_key", ""))
@@ -1024,7 +1440,6 @@ class SocialReplyTrainer:
         self.score_btn.configure(state="disabled", text="AI 正在分析…")
         self.clear_practice_btn.configure(state="disabled")
         self.practice_text.configure(state="disabled")
-        self.scene_list.configure(state="disabled")
         self.category_combo.configure(state="disabled")
         self.edit_scene_btn.configure(state="disabled")
         self.score_status.configure(text="正在分析表达、边界、语气和情境…")
@@ -1039,28 +1454,37 @@ class SocialReplyTrainer:
 
         def on_success(result):
             self.is_scoring = False
-            self.scene_list.configure(state="normal")
             self.category_combo.configure(state="readonly")
             self.edit_scene_btn.configure(state="normal")
             self.score_btn.configure(state="normal", text="再评一次  →")
             self.clear_practice_btn.configure(state="normal")
             self.practice_text.configure(state="normal")
             self.score_result = result
-            self.score_total_label.configure(text=f"{result['total']} / 100")
-            self.score_total_bar.configure(value=result["total"])
-            for key, label in self.score_dimension_labels.items():
-                label.configure(text=f"{result[key]} / 25")
-                self.score_dimension_bars[key].configure(value=result[key])
-            self.score_feedback_label.configure(
-                text=f"做得好的地方：{result['strength']}\n\n可以再试试：{result['suggestion']}\n\n一个可选版本：{result['rewrite']}"
-            )
-            self.score_frame.grid()
-            self.score_status.configure(text="评分完成。分数用于练习参考，不代表唯一正确答案。")
-            self.status_label.configure(text="AI 反馈已生成。看看建议，再按自己的语气调整。")
+            self._render_score_result(result)
+            self._save_current_practice_state()
+            record = {
+                "time": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "scene_index": self.selected_index,
+                "tone": self.tone.get(),
+                "scene": {key: scene.get(key, "") for key in (
+                    "group", "title", "trigger", "extra", "soft", "firm", "bad", "rule"
+                )},
+                "response": response,
+                "result": dict(result),
+            }
+            try:
+                updated_history = self.history + [record]
+                _save_json(HISTORY_FILE, updated_history)
+                self.history = updated_history
+                self.score_status.configure(text="评分完成，记录已保存。")
+                self.status_label.configure(text="AI 反馈已生成并保存到练习记录。看看建议，再按自己的语气调整。")
+            except OSError as e:
+                self.score_status.configure(text="评分完成，但历史文件暂时无法保存。")
+                self.status_label.configure(text=f"AI 反馈已生成；历史记录保存失败：{e}")
+                messagebox.showwarning("记录保存失败", f"本次评分已显示，但无法写入外置历史文件：\n{HISTORY_FILE}\n\n{e}", parent=self.root)
 
         def on_error(err):
             self.is_scoring = False
-            self.scene_list.configure(state="normal")
             self.category_combo.configure(state="readonly")
             self.edit_scene_btn.configure(state="normal")
             self.score_btn.configure(state="normal", text="重新获取 AI 反馈  →")
@@ -1074,17 +1498,19 @@ class SocialReplyTrainer:
     def _clear_practice(self):
         self.practice_text.delete("1.0", tk.END)
         self.score_result = None
-        self.score_frame.grid_remove()
+        self._save_current_practice_state()
+        self._render_score_result(None)
         self.score_btn.configure(state="normal", text="AI 评价我的回复  →")
         self.score_status.configure(text="先写下你的版本，再获取 AI 反馈。")
-        self.status_label.configure(text="练习区已清空。写下你愿意说出口的版本，再试一次。")
+        self.status_label.configure(text="当前场景练习区已清空；已保存的历史评分仍保留在练习记录中。")
 
     def _on_practice_edit(self, _event=None):
         if self.score_result is not None:
             self.score_result = None
-            self.score_frame.grid_remove()
+            self._render_score_result(None)
             self.score_btn.configure(text="AI 评价我的回复  →")
             self.score_status.configure(text="回复已修改，请重新获取 AI 反馈。")
+        self._save_current_practice_state()
 
 def main():
     root = tk.Tk()
