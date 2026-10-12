@@ -12,6 +12,8 @@ from pathlib import Path
 APP_DIR = Path(os.environ.get("APPDATA", str(Path.home() / ".config"))) / "SocialReplyTrainer"
 SETTINGS_FILE = APP_DIR / "settings.json"
 CUSTOM_SCENES_FILE = APP_DIR / "custom_scenes.json"
+SCENE_OVERRIDES_FILE = APP_DIR / "scene_overrides.json"
+APP_VERSION = "2.5"
 
 # This prompt is embedded in the program and is also provided as AI_PROMPT.md.
 SYSTEM_PROMPT = r"""你是“真实社交回复训练器”的沟通教练。你的任务是根据用户提供的真实社交情景，生成自然、可直接说出口的中文回复。
@@ -200,7 +202,7 @@ FONT_TITLE = (FONT_FAMILY, 25, "bold")
 class SocialReplyTrainer:
     def __init__(self, root):
         self.root = root
-        self.root.title("真实社交回复训练器")
+        self.root.title(f"真实社交回复训练器 v{APP_VERSION}")
         self.root.geometry("1240x820")
         self.root.minsize(1020, 720)
         self.root.configure(bg=BG)
@@ -208,7 +210,22 @@ class SocialReplyTrainer:
         if not isinstance(saved_custom, list):
             saved_custom = []
         self.custom_scenes = [s for s in saved_custom if isinstance(s, dict) and all(k in s for k in ("group", "title", "trigger", "soft", "firm", "bad", "rule"))]
-        self.scenes = list(SCENES) + self.custom_scenes
+        for scene in self.custom_scenes:
+            if not isinstance(scene.get("extra"), str):
+                scene["extra"] = ""
+        saved_overrides = _load_json(SCENE_OVERRIDES_FILE, {})
+        self.scene_overrides = saved_overrides if isinstance(saved_overrides, dict) else {}
+        self.scenes = [dict(scene) for scene in SCENES] + self.custom_scenes
+        for raw_index, values in self.scene_overrides.items():
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= index < len(SCENES) and isinstance(values, dict):
+                for key in ("group", "title", "trigger", "extra"):
+                    value = values.get(key)
+                    if isinstance(value, str):
+                        self.scenes[index][key] = value
         self.settings = _load_json(SETTINGS_FILE, {})
         if not isinstance(self.settings, dict):
             self.settings = {}
@@ -286,6 +303,8 @@ class SocialReplyTrainer:
         self.scene_list.configure(font=(FONT_FAMILY, 13), activestyle="none")
         tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(0, 14))
         ttk.Button(sidebar, text="＋  新增训练场景", style="Soft.TButton", command=self._open_add_scene).pack(fill="x", padx=17, pady=(0, 8))
+        self.edit_scene_btn = ttk.Button(sidebar, text="编辑当前场景", command=self._open_edit_scene)
+        self.edit_scene_btn.pack(fill="x", padx=17, pady=(0, 8))
         tk.Label(sidebar, text="把真实情景变成一次练习", bg=SIDEBAR, fg=SIDEBAR_MUTED, font=(FONT_FAMILY, 11)).pack(anchor="w", padx=21, pady=(0, 17))
 
         workspace = tk.Frame(splitter, bg=BG)
@@ -511,14 +530,27 @@ class SocialReplyTrainer:
         self.rule_label.configure(text=s["rule"])
         self.bad_label.configure(text=s["bad"])
 
+    def _center_dialog(self, win, width, height, min_width, min_height):
+        self.root.update_idletasks()
+        win.update_idletasks()
+        screen_width = win.winfo_screenwidth()
+        screen_height = win.winfo_screenheight()
+        width = min(width, max(560, screen_width - 80))
+        height = min(height, max(520, screen_height - 100))
+        win.minsize(min(min_width, width), min(min_height, height))
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - width) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - height) // 2
+        x = min(max(0, x), max(0, screen_width - width))
+        y = min(max(0, y), max(0, screen_height - height - 100))
+        win.geometry(f"{width}x{height}+{x}+{y}")
+
     def _open_api_settings(self):
         win = tk.Toplevel(self.root)
         win.title("DeepSeek API 设置")
         win.transient(self.root)
         win.grab_set()
         win.configure(bg=BG)
-        win.geometry("720x440")
-        win.minsize(680, 410)
+        self._center_dialog(win, 720, 440, 680, 410)
 
         outer = ttk.Frame(win, padding=28)
         outer.pack(fill="both", expand=True)
@@ -567,16 +599,17 @@ class SocialReplyTrainer:
         win.transient(self.root)
         win.grab_set()
         win.configure(bg=BG)
-        win.geometry("900x720")
-        win.minsize(820, 650)
+        self._center_dialog(win, 900, 660, 820, 600)
 
         outer = ttk.Frame(win, padding=(30, 27, 30, 24))
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="新增社交场景", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="写清楚发生了什么、你和对方是什么关系，以及你担心什么。AI 会生成两种回复和沟通分析。", style="SubTitle.TLabel", wraplength=830).pack(anchor="w", pady=(8, 20))
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(2, weight=1)
+        ttk.Label(outer, text="新增社交场景", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(outer, text="写清楚发生了什么、你和对方是什么关系，以及你担心什么。AI 会生成两种回复和沟通分析。", style="SubTitle.TLabel", wraplength=830).grid(row=1, column=0, sticky="w", pady=(8, 20))
 
         form = ttk.Frame(outer)
-        form.pack(fill="both", expand=True)
+        form.grid(row=2, column=0, sticky="nsew")
         form.columnconfigure(1, weight=1)
         ttk.Label(form, text="场景分类", style="Field.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 16), pady=(0, 13))
         group_var = tk.StringVar(value="日常社交")
@@ -600,10 +633,9 @@ class SocialReplyTrainer:
         extra.insert("1.0", "例如：不想把关系闹僵；考虑对方是我的上级；回复不要太长。")
 
         status = ttk.Label(outer, text="提示：首次使用前，请点击主窗口的“API 设置”填入新的 DeepSeek API 密钥。", style="Muted.TLabel", wraplength=830)
-        status.pack(anchor="w", pady=(8, 13))
-
+        status.grid(row=3, column=0, sticky="w", pady=(8, 13))
         actions = ttk.Frame(outer)
-        actions.pack(fill="x")
+        actions.grid(row=4, column=0, sticky="ew")
         generate_btn = ttk.Button(actions, text="AI 生成并添加场景", style="Accent.TButton")
         generate_btn.pack(side="right")
         ttk.Button(actions, text="取消", command=win.destroy).pack(side="right", padx=(0, 8))
@@ -644,6 +676,7 @@ class SocialReplyTrainer:
                     "group": group,
                     "title": title,
                     "trigger": trigger,
+                    "extra": extra_notes,
                     "soft": result["soft"],
                     "firm": result["firm"],
                     "bad": result["bad"],
@@ -678,6 +711,103 @@ class SocialReplyTrainer:
         generate_btn.configure(command=on_generate)
         title_entry.focus_set()
 
+    def _open_edit_scene(self):
+        index = self.selected_index
+        scene = self.scenes[index]
+        win = tk.Toplevel(self.root)
+        win.title("编辑社交场景")
+        win.transient(self.root)
+        win.grab_set()
+        win.configure(bg=BG)
+        self._center_dialog(win, 900, 660, 820, 600)
+
+        outer = ttk.Frame(win, padding=(30, 27, 30, 24))
+        outer.pack(fill="both", expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(2, weight=1)
+        ttk.Label(outer, text="编辑社交场景", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(outer, text="修改后会保存在本机。场景内容和额外要求会用于 AI 评分。", style="SubTitle.TLabel", wraplength=830).grid(row=1, column=0, sticky="w", pady=(8, 20))
+
+        form = ttk.Frame(outer)
+        form.grid(row=2, column=0, sticky="nsew")
+        form.columnconfigure(1, weight=1)
+        ttk.Label(form, text="场景分类", style="Field.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 16), pady=(0, 13))
+        group_var = tk.StringVar(value=scene["group"])
+        groups = sorted({item["group"] for item in self.scenes if item["group"] != scene["group"]})
+        group_values = list(dict.fromkeys([scene["group"]] + groups + ["同事", "工作", "父母", "朋友", "社交", "两性社交", "日常社交", "朋友与同事", "朋友与家人"]))
+        group_combo = ttk.Combobox(form, textvariable=group_var, values=group_values, width=18, font=FONT_INPUT)
+        group_combo.grid(row=0, column=1, sticky="ew", pady=(0, 13), ipady=4)
+
+        ttk.Label(form, text="场景标题", style="Field.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 16), pady=(0, 13))
+        title_var = tk.StringVar(value=scene["title"])
+        title_entry = ttk.Entry(form, textvariable=title_var, font=FONT_INPUT)
+        title_entry.grid(row=1, column=1, sticky="ew", pady=(0, 13), ipady=6)
+
+        ttk.Label(form, text="具体情景", style="Field.TLabel").grid(row=2, column=0, sticky="nw", padx=(0, 16), pady=(0, 13))
+        situation = tk.Text(form, height=10, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
+        situation.grid(row=2, column=1, sticky="nsew", pady=(0, 13))
+        situation.insert("1.0", scene["trigger"])
+        form.rowconfigure(2, weight=1)
+
+        ttk.Label(form, text="额外要求（可选）", style="Field.TLabel").grid(row=3, column=0, sticky="nw", padx=(0, 16), pady=(0, 13))
+        extra = tk.Text(form, height=3, wrap="word", font=FONT_INPUT, bg=CARD, fg=TEXT, insertbackground=BLUE, relief="flat", bd=0, padx=14, pady=12, undo=True, highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
+        extra.grid(row=3, column=1, sticky="ew", pady=(0, 13))
+        extra.insert("1.0", scene.get("extra", ""))
+
+        status = ttk.Label(outer, text="分类、标题和具体情景不能为空。", style="Muted.TLabel")
+        status.grid(row=3, column=0, sticky="w", pady=(8, 13))
+        actions = ttk.Frame(outer)
+        actions.grid(row=4, column=0, sticky="ew")
+
+        def save_edit():
+            group = group_var.get().strip()
+            title = title_var.get().strip()
+            trigger = situation.get("1.0", "end-1c").strip()
+            extra_notes = extra.get("1.0", "end-1c").strip()
+            if not group:
+                messagebox.showwarning("请填写分类", "场景分类不能为空。", parent=win)
+                group_combo.focus_set()
+                return
+            if not title:
+                messagebox.showwarning("请填写标题", "场景标题不能为空。", parent=win)
+                title_entry.focus_set()
+                return
+            if not trigger:
+                messagebox.showwarning("请填写具体情景", "具体情景不能为空。", parent=win)
+                situation.focus_set()
+                return
+
+            updated = dict(scene)
+            updated.update({"group": group, "title": title, "trigger": trigger, "extra": extra_notes})
+            try:
+                if index < len(SCENES):
+                    new_overrides = dict(self.scene_overrides)
+                    new_overrides[str(index)] = {key: updated[key] for key in ("group", "title", "trigger", "extra")}
+                    _save_json(SCENE_OVERRIDES_FILE, new_overrides)
+                    self.scene_overrides = new_overrides
+                else:
+                    custom_index = index - len(SCENES)
+                    new_custom_scenes = list(self.custom_scenes)
+                    new_custom_scenes[custom_index] = updated
+                    _save_json(CUSTOM_SCENES_FILE, new_custom_scenes)
+                    self.custom_scenes = new_custom_scenes
+            except (OSError, IndexError) as e:
+                messagebox.showerror("保存失败", f"无法保存场景修改：{e}", parent=win)
+                return
+
+            self.scenes[index] = updated
+            categories = ["全部场景"] + sorted({item["group"] for item in self.scenes})
+            self.category_combo.configure(values=categories)
+            self.category.set("全部场景")
+            self._refresh_scene_list()
+            self._select_scene(index)
+            self.status_label.configure(text=f"场景已更新并保存：{title}")
+            win.destroy()
+
+        ttk.Button(actions, text="保存修改", style="Accent.TButton", command=save_edit).pack(side="right")
+        ttk.Button(actions, text="取消", command=win.destroy).pack(side="right", padx=(0, 8))
+        title_entry.focus_set()
+
     def _request_ai_replies(self, api_key, model, group, title, trigger, extra_notes):
         user_content = (
             f"请为以下真实社交情景生成适当的沟通回复。\n\n"
@@ -697,6 +827,7 @@ class SocialReplyTrainer:
 评价原则：
 - 不把强硬等同于高分，也不把顺从等同于温和。
 - 结合权力差异、关系、冲突成本和现实安全；在高风险场景中优先考虑安全与可执行性。
+- 如果场景提供了额外要求，将其视为用户的实际偏好，并结合安全与情境判断是否适合。
 - 评价表达是否清楚、边界是否合适、语气是否自然、是否贴合情境。
 - 分数是练习反馈，不是对用户或关系的判断；保持鼓励，避免羞辱和武断结论。
 - 给一个可选改写，保留用户本意，不编造新事实；如果原句已经合适，可以说明无需大改。
@@ -716,6 +847,7 @@ class SocialReplyTrainer:
         user_content = (
             f"请评价以下练习回复。场景分类：{scene['group']}\n"
             f"场景标题：{scene['title']}\n具体情景：{scene['trigger']}\n"
+            f"用户的额外要求：{scene.get('extra') or '无'}\n"
             f"用户写的回复：{response}\n\n"
             "请依据系统提示评分，并只返回指定 JSON 对象。"
         )
@@ -831,6 +963,7 @@ class SocialReplyTrainer:
         self.practice_text.configure(state="disabled")
         self.scene_list.configure(state="disabled")
         self.category_combo.configure(state="disabled")
+        self.edit_scene_btn.configure(state="disabled")
         self.score_status.configure(text="正在分析表达、边界、语气和情境…")
 
         def worker():
@@ -845,6 +978,7 @@ class SocialReplyTrainer:
             self.is_scoring = False
             self.scene_list.configure(state="normal")
             self.category_combo.configure(state="readonly")
+            self.edit_scene_btn.configure(state="normal")
             self.score_btn.configure(state="normal", text="再评一次  →")
             self.clear_practice_btn.configure(state="normal")
             self.practice_text.configure(state="normal")
@@ -863,6 +997,7 @@ class SocialReplyTrainer:
             self.is_scoring = False
             self.scene_list.configure(state="normal")
             self.category_combo.configure(state="readonly")
+            self.edit_scene_btn.configure(state="normal")
             self.score_btn.configure(state="normal", text="重新获取 AI 反馈  →")
             self.clear_practice_btn.configure(state="normal")
             self.practice_text.configure(state="normal")
