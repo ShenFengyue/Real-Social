@@ -178,22 +178,24 @@ SCENES = [
     },
 ]
 
-BG = "#F5F6F4"
+BG = "#F4F6FB"
 CARD = "#FFFFFF"
-TEXT = "#202722"
-MUTED = "#68736D"
-BLUE = "#416B5A"
-BORDER = "#E2E7E3"
-GREEN = "#416B5A"
-RED = "#A34F4A"
-ACCENT_LIGHT = "#EAF1ED"
+TEXT = "#182033"
+MUTED = "#697386"
+BLUE = "#635BDB"
+BORDER = "#E4E8F0"
+GREEN = "#18836A"
+RED = "#B34F5A"
+ACCENT_LIGHT = "#EFEEFF"
+SIDEBAR = "#FFFFFF"
+SIDEBAR_PANEL = "#F6F7FB"
+SIDEBAR_TEXT = TEXT
+SIDEBAR_MUTED = MUTED
 FONT_FAMILY = "Microsoft YaHei UI"
 FONT_BODY = (FONT_FAMILY, 14)
 FONT_INPUT = (FONT_FAMILY, 15)
 FONT_LABEL = (FONT_FAMILY, 14, "bold")
 FONT_TITLE = (FONT_FAMILY, 25, "bold")
-FONT_SCENE_TITLE = (FONT_FAMILY, 20, "bold")
-FONT_REPLY = (FONT_FAMILY, 16)
 
 class SocialReplyTrainer:
     def __init__(self, root):
@@ -214,7 +216,9 @@ class SocialReplyTrainer:
         self.tone = tk.StringVar(value="soft")
         self.category = tk.StringVar(value="全部场景")
         self.show_analysis = False
-        self.show_answer = True
+        self.show_reference = False
+        self.is_scoring = False
+        self.score_result = None
         self._setup_styles()
         self._build_ui()
         self._refresh_scene_list()
@@ -235,146 +239,210 @@ class SocialReplyTrainer:
         style.configure("CardTitle.TLabel", background=CARD, foreground=TEXT, font=FONT_LABEL)
         style.configure("Field.TLabel", background=BG, foreground=TEXT, font=FONT_LABEL)
         style.configure("CardText.TLabel", background=CARD, foreground=TEXT, font=FONT_BODY, wraplength=760, justify="left")
-        style.configure("TButton", font=FONT_BODY, padding=(16, 11), borderwidth=0)
-        style.map("TButton", background=[("active", "#EDF1EE")])
-        style.configure("Accent.TButton", background=BLUE, foreground="white", font=FONT_LABEL, borderwidth=0, padding=(18, 12))
-        style.map("Accent.TButton", background=[("active", "#355948"), ("pressed", "#2D4D3F")])
+        style.configure("TButton", font=FONT_BODY, padding=(16, 11), borderwidth=0, background=CARD, foreground=TEXT)
+        style.map("TButton", background=[("active", "#F0F2F8")])
+        style.configure("Accent.TButton", background=BLUE, foreground="white", font=FONT_LABEL, borderwidth=0, padding=(20, 13))
+        style.map("Accent.TButton", background=[("active", "#5149C5"), ("pressed", "#463FAE")])
         style.configure("Soft.TButton", background=ACCENT_LIGHT, foreground=BLUE, borderwidth=0, padding=(16, 11))
-        style.map("Soft.TButton", background=[("active", "#DDE9E1")])
+        style.map("Soft.TButton", background=[("active", "#E5E3FF")])
         style.configure("TCombobox", padding=8, font=FONT_BODY, fieldbackground=CARD, foreground=TEXT, arrowsize=16)
+        style.configure("Sidebar.TCombobox", padding=8, font=FONT_BODY, fieldbackground=SIDEBAR_PANEL, background=SIDEBAR_PANEL, foreground=SIDEBAR_TEXT, arrowsize=16)
         style.configure("TEntry", padding=8, font=FONT_INPUT, fieldbackground=CARD, foreground=TEXT)
         style.configure("TCheckbutton", background=BG, foreground=TEXT, font=FONT_BODY)
         style.configure("TRadiobutton", background=CARD, foreground=TEXT, font=FONT_BODY)
         style.configure("TSeparator", background=BORDER)
 
     def _build_ui(self):
-        outer = ttk.Frame(self.root, padding=(30, 26, 30, 20))
-        outer.pack(fill="both", expand=True)
+        shell = tk.Frame(self.root, bg=BG)
+        shell.pack(fill="both", expand=True)
+        splitter = tk.PanedWindow(shell, orient=tk.HORIZONTAL, bg=BORDER, bd=0, relief="flat",
+                                  sashwidth=7, sashrelief="flat", opaqueresize=True, showhandle=False)
+        splitter.pack(fill="both", expand=True)
 
-        header = ttk.Frame(outer)
-        header.pack(fill="x", pady=(0, 23))
-        title_block = ttk.Frame(header)
-        title_block.pack(side="left", fill="x", expand=True)
-        ttk.Label(title_block, text="真实社交回复训练器", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(title_block, text="不讨好，不攻击。练习清晰表达，也尊重彼此。", style="SubTitle.TLabel").pack(anchor="w", pady=(4, 0))
-        header_actions = ttk.Frame(header)
-        header_actions.pack(side="right", anchor="e", pady=(7, 0))
-        ttk.Button(header_actions, text="＋ 新增场景 / AI 生成", style="Accent.TButton", command=self._open_add_scene).pack(side="left", padx=(0, 8))
-        ttk.Button(header_actions, text="API 设置", command=self._open_api_settings).pack(side="left")
+        sidebar = tk.Frame(splitter, bg=SIDEBAR, width=286)
+        brand = tk.Frame(sidebar, bg=SIDEBAR)
+        brand.pack(fill="x", padx=22, pady=(26, 28))
+        tk.Label(brand, text="R", bg=BLUE, fg="white", font=(FONT_FAMILY, 17, "bold"), width=2, height=1).pack(side="left", padx=(0, 11))
+        brand_text = tk.Frame(brand, bg=SIDEBAR)
+        brand_text.pack(side="left", fill="x", expand=True)
+        tk.Label(brand_text, text="REAL TALK", bg=SIDEBAR, fg=SIDEBAR_TEXT, font=(FONT_FAMILY, 13, "bold")).pack(anchor="w")
+        tk.Label(brand_text, text="社交沟通练习", bg=SIDEBAR, fg=SIDEBAR_MUTED, font=(FONT_FAMILY, 11)).pack(anchor="w", pady=(2, 0))
 
-        body = ttk.Frame(outer)
-        body.pack(fill="both", expand=True)
-        body.columnconfigure(0, weight=0, minsize=255)
-        body.columnconfigure(1, weight=1)
-        body.rowconfigure(0, weight=1)
-
-        sidebar = tk.Frame(body, bg=CARD, highlightbackground=BORDER, highlightthickness=1, width=255)
-        sidebar.grid(row=0, column=0, sticky="nsew", padx=(0, 15))
-        sidebar.grid_propagate(False)
-        tk.Label(sidebar, text="选择训练场景", bg=CARD, fg=TEXT, font=FONT_LABEL).pack(anchor="w", padx=17, pady=(19, 12))
-        self.category_combo = ttk.Combobox(sidebar, textvariable=self.category, state="readonly", values=["全部场景"] + sorted({s["group"] for s in self.scenes}), width=22)
-        self.category_combo.pack(fill="x", padx=13, pady=(0, 10))
+        tk.Label(sidebar, text="场景库", bg=SIDEBAR, fg=SIDEBAR_MUTED, font=(FONT_FAMILY, 12, "bold")).pack(anchor="w", padx=22, pady=(0, 9))
+        self.category_combo = ttk.Combobox(sidebar, textvariable=self.category, state="readonly", values=["全部场景"] + sorted({s["group"] for s in self.scenes}), style="Sidebar.TCombobox")
+        self.category_combo.pack(fill="x", padx=17, pady=(0, 12))
         self.category_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_scene_list())
-        list_wrap = tk.Frame(sidebar, bg=CARD)
-        list_wrap.pack(fill="both", expand=True, padx=(10, 6), pady=(0, 9))
+        list_wrap = tk.Frame(sidebar, bg=SIDEBAR)
+        list_wrap.pack(fill="both", expand=True, padx=(12, 7), pady=(0, 12))
         self.scene_list = tk.Listbox(list_wrap, activestyle="none", selectmode="single", relief="flat", borderwidth=0,
-                                     bg=CARD, fg=TEXT, selectbackground=ACCENT_LIGHT, selectforeground=BLUE,
-                                     font=FONT_BODY, highlightthickness=0,
-                                     yscrollcommand=None, exportselection=False)
+                                     bg=SIDEBAR, fg=SIDEBAR_TEXT, selectbackground=ACCENT_LIGHT, selectforeground=BLUE,
+                                     font=(FONT_FAMILY, 13), highlightthickness=0, yscrollcommand=None,
+                                     exportselection=False, selectborderwidth=0)
         scrollbar = ttk.Scrollbar(list_wrap, orient="vertical", command=self.scene_list.yview)
         self.scene_list.configure(yscrollcommand=scrollbar.set)
         self.scene_list.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         self.scene_list.bind("<<ListboxSelect>>", self._on_scene_select)
-        tk.Label(sidebar, text="先看情景，再选择一种回复风格。", bg=CARD, fg=MUTED, font=FONT_BODY, wraplength=230, justify="left").pack(anchor="w", padx=17, pady=(0, 17))
+        self.scene_list.configure(font=(FONT_FAMILY, 13), activestyle="none")
+        tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(0, 14))
+        ttk.Button(sidebar, text="＋  新增训练场景", style="Soft.TButton", command=self._open_add_scene).pack(fill="x", padx=17, pady=(0, 8))
+        tk.Label(sidebar, text="把真实情景变成一次练习", bg=SIDEBAR, fg=SIDEBAR_MUTED, font=(FONT_FAMILY, 11)).pack(anchor="w", padx=21, pady=(0, 17))
 
-        self.content = ttk.Frame(body)
-        self.content.grid(row=0, column=1, sticky="nsew")
+        workspace = tk.Frame(splitter, bg=BG)
+        workspace.columnconfigure(0, weight=1)
+        workspace.rowconfigure(1, weight=1)
+        topbar = tk.Frame(workspace, bg=BG)
+        topbar.grid(row=0, column=0, sticky="ew", padx=34, pady=(24, 18))
+        topbar_left = tk.Frame(topbar, bg=BG)
+        topbar_left.pack(side="left", fill="x", expand=True)
+        tk.Label(topbar_left, text="练习工作台", bg=BG, fg=TEXT, font=(FONT_FAMILY, 24, "bold")).pack(anchor="w")
+        tk.Label(topbar_left, text="先说出你的版本，再和 AI 一起打磨。", bg=BG, fg=MUTED, font=FONT_BODY).pack(anchor="w", pady=(4, 0))
+        top_actions = tk.Frame(topbar, bg=BG)
+        top_actions.pack(side="right", anchor="ne", pady=(5, 0))
+        ttk.Button(top_actions, text="API 设置", command=self._open_api_settings).pack(side="right")
+
+        content_wrap = tk.Frame(workspace, bg=BG)
+        content_wrap.grid(row=1, column=0, sticky="nsew", padx=(34, 34), pady=(0, 22))
+        content_wrap.columnconfigure(0, weight=1)
+        content_wrap.rowconfigure(0, weight=1)
+        self.content_canvas = tk.Canvas(content_wrap, bg=BG, highlightthickness=0, bd=0)
+        self.content_canvas.grid(row=0, column=0, sticky="nsew")
+        content_scrollbar = ttk.Scrollbar(content_wrap, orient="vertical", command=self.content_canvas.yview)
+        content_scrollbar.grid(row=0, column=1, sticky="ns", padx=(9, 0))
+        self.content_canvas.configure(yscrollcommand=content_scrollbar.set)
+        self.content = tk.Frame(content_wrap, bg=BG)
+        self.content_window_id = self.content_canvas.create_window((0, 0), window=self.content, anchor="nw")
+        self.content.bind("<Configure>", lambda _event: self.content_canvas.configure(scrollregion=self.content_canvas.bbox("all")))
+        self.content_canvas.bind("<Configure>", lambda event: self.content_canvas.itemconfigure(self.content_window_id, width=event.width))
+        self.content.bind("<Configure>", self._update_wrap_lengths, add="+")
+        self.root.bind_all("<MouseWheel>", self._on_mousewheel)
         self.content.columnconfigure(0, weight=1)
-        self.content.rowconfigure(4, weight=1)
+        self.content.rowconfigure(2, weight=1)
 
-        self.scene_heading = ttk.Frame(self.content)
-        self.scene_heading.grid(row=0, column=0, sticky="ew", pady=(0, 10))
-        self.category_badge = tk.Label(self.scene_heading, text="同事", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 12, "bold"), padx=11, pady=5)
-        self.category_badge.pack(side="left", padx=(0, 10))
-        self.scene_title = tk.Label(self.scene_heading, text="场景标题", bg=BG, fg=TEXT, font=FONT_SCENE_TITLE, anchor="w", justify="left", wraplength=760)
-        self.scene_title.pack(side="left", fill="x", expand=True)
+        self.scene_heading = tk.Frame(self.content, bg=BG)
+        self.scene_heading.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        self.category_badge = tk.Label(self.scene_heading, text="同事", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 12, "bold"), padx=12, pady=6)
+        self.category_badge.pack(anchor="w", pady=(0, 7))
+        self.scene_title = tk.Label(self.scene_heading, text="场景标题", bg=BG, fg=TEXT, font=(FONT_FAMILY, 22, "bold"), anchor="w", justify="left", wraplength=900)
+        self.scene_title.pack(anchor="w", fill="x")
 
-        self._card_label(self.content, "情景还原", 1, pady=(0, 6))
-        self.situation_card = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
-        self.situation_card.grid(row=2, column=0, sticky="ew", pady=(0, 13))
-        self.situation_label = tk.Label(self.situation_card, text="", bg=CARD, fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=760, padx=19, pady=18)
-        self.situation_label.pack(fill="x")
-
-        response_head = ttk.Frame(self.content)
-        response_head.grid(row=3, column=0, sticky="ew", pady=(0, 7))
-        ttk.Label(response_head, text="推荐回复", style="CardTitle.TLabel").pack(side="left")
-        self.tone_frame = tk.Frame(response_head, bg=BG)
-        self.tone_frame.pack(side="right")
-        self.soft_btn = tk.Radiobutton(self.tone_frame, text="温和但清晰", value="soft", variable=self.tone, command=self._update_reply,
-                                       indicatoron=False, selectcolor=ACCENT_LIGHT, bg=BG, fg=MUTED, activebackground=BG,
-                                       font=FONT_BODY, padx=14, pady=9, bd=0, highlightthickness=0)
-        self.soft_btn.pack(side="left", padx=(0, 4))
-        self.firm_btn = tk.Radiobutton(self.tone_frame, text="坚定直接", value="firm", variable=self.tone, command=self._update_reply,
-                                       indicatoron=False, selectcolor=ACCENT_LIGHT, bg=BG, fg=MUTED, activebackground=BG,
-                                       font=FONT_BODY, padx=14, pady=9, bd=0, highlightthickness=0)
-        self.firm_btn.pack(side="left")
-
-        self.reply_card = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
-        self.reply_card.grid(row=4, column=0, sticky="nsew", pady=(0, 10))
-        self.reply_card.rowconfigure(0, weight=1)
-        self.reply_card.columnconfigure(0, weight=1)
-        self.reply_text = tk.Text(self.reply_card, height=5, wrap="word", relief="flat", bd=0, bg=CARD, fg=TEXT,
-                                  font=FONT_REPLY, padx=22, pady=20, spacing1=5, spacing3=6,
-                                  selectbackground="#DCE9E2", selectforeground=TEXT)
-        self.reply_text.grid(row=0, column=0, sticky="nsew")
-        self.reply_text.configure(state="disabled")
-
-        buttons = ttk.Frame(self.content)
-        buttons.grid(row=5, column=0, sticky="ew", pady=(0, 10))
-        self.copy_btn = ttk.Button(buttons, text="复制推荐回复", style="Accent.TButton", command=self._copy_reply)
-        self.copy_btn.pack(side="left")
-        self.analysis_btn = ttk.Button(buttons, text="为什么这样回复？", style="Soft.TButton", command=self._toggle_analysis)
-        self.analysis_btn.pack(side="left", padx=(8, 0))
-        self.practice_btn = ttk.Button(buttons, text="先自己练一句 ↓", command=self._toggle_practice)
-        self.practice_btn.pack(side="right")
-
-        self.analysis_frame = tk.Frame(self.content, bg="#F0F5F1", highlightbackground="#DCE7E0", highlightthickness=1)
-        self.analysis_frame.grid(row=6, column=0, sticky="ew", pady=(0, 10))
-        self.analysis_frame.columnconfigure(0, weight=1)
-        self.rule_title = tk.Label(self.analysis_frame, text="这句话的核心逻辑", bg="#F0F5F1", fg=GREEN, font=FONT_LABEL, anchor="w")
-        self.rule_title.pack(fill="x", padx=13, pady=(11, 4))
-        self.rule_label = tk.Label(self.analysis_frame, text="", bg="#F0F5F1", fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=760)
-        self.rule_label.pack(fill="x", padx=13, pady=(0, 9))
-        tk.Frame(self.analysis_frame, bg="#DCE7E0", height=1).pack(fill="x", padx=13, pady=1)
-        tk.Label(self.analysis_frame, text="尽量避免", bg="#F0F5F1", fg=RED, font=FONT_LABEL, anchor="w").pack(fill="x", padx=13, pady=(8, 4))
-        self.bad_label = tk.Label(self.analysis_frame, text="", bg="#F0F5F1", fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=760)
-        self.bad_label.pack(fill="x", padx=13, pady=(0, 12))
-        self.analysis_frame.grid_remove()
+        situation_card = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        situation_card.grid(row=1, column=0, sticky="ew", pady=(0, 14))
+        situation_inner = tk.Frame(situation_card, bg=CARD)
+        situation_inner.pack(fill="x", padx=19, pady=16)
+        tk.Label(situation_inner, text="情景还原", bg=CARD, fg=MUTED, font=(FONT_FAMILY, 11, "bold")).pack(anchor="w", pady=(0, 7))
+        self.situation_label = tk.Label(situation_inner, text="", bg=CARD, fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=900)
+        self.situation_label.pack(fill="x", anchor="w")
 
         self.practice_frame = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
-        self.practice_frame.grid(row=7, column=0, sticky="ew", pady=(0, 8))
-        tk.Label(self.practice_frame, text="先自己写一句（可选）", bg=CARD, fg=TEXT, font=FONT_LABEL, anchor="w").pack(fill="x", padx=16, pady=(14, 6))
-        tk.Label(self.practice_frame, text="不用追求完美。先写出你第一反应想说的话，再对照推荐回复。", bg=CARD, fg=MUTED, font=FONT_BODY, anchor="w", justify="left", wraplength=760).pack(fill="x", padx=16, pady=(0, 9))
-        self.practice_text = tk.Text(self.practice_frame, height=3, wrap="word", relief="solid", bd=1, bg="#FBFCFE", fg=TEXT,
-                                     font=FONT_INPUT, padx=13, pady=12, undo=True)
-        self.practice_text.pack(fill="x", padx=16, pady=(0, 10))
+        self.practice_frame.grid(row=2, column=0, sticky="nsew", pady=(0, 12))
+        self.practice_frame.columnconfigure(0, weight=1)
+        self.practice_frame.rowconfigure(2, weight=1)
+        practice_head = tk.Frame(self.practice_frame, bg=CARD)
+        practice_head.grid(row=0, column=0, sticky="ew", padx=21, pady=(18, 5))
+        practice_head.columnconfigure(0, weight=1)
+        tk.Label(practice_head, text="先自己练一句", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 17, "bold")).grid(row=0, column=0, sticky="w")
+        tk.Label(practice_head, text="STEP 01", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 11, "bold"), padx=9, pady=4).grid(row=0, column=1, sticky="e")
+        tk.Label(self.practice_frame, text="写下你此刻最想说的话。完成后让 AI 从表达、边界、语气和情境四方面给出反馈。", bg=CARD, fg=MUTED, font=(FONT_FAMILY, 13), anchor="w", justify="left", wraplength=900).grid(row=1, column=0, sticky="ew", padx=21, pady=(0, 11))
+        self.practice_text = tk.Text(self.practice_frame, height=5, wrap="word", relief="flat", bd=0, bg="#FAFBFE", fg=TEXT,
+                                     insertbackground=BLUE, font=FONT_INPUT, padx=15, pady=13, undo=True,
+                                     highlightthickness=1, highlightbackground=BORDER, highlightcolor=BLUE)
+        self.practice_text.grid(row=2, column=0, sticky="nsew", padx=21, pady=(0, 12))
+        self.practice_text.bind("<KeyRelease>", self._on_practice_edit)
         practice_actions = tk.Frame(self.practice_frame, bg=CARD)
-        practice_actions.pack(fill="x", padx=13, pady=(0, 11))
-        ttk.Button(practice_actions, text="清空练习", command=self._clear_practice).pack(side="left")
-        ttk.Button(practice_actions, text="复制我的回复", command=self._copy_practice).pack(side="left", padx=(7, 0))
-        self.practice_frame.grid_remove()
+        practice_actions.grid(row=3, column=0, sticky="ew", padx=21, pady=(0, 17))
+        self.score_btn = ttk.Button(practice_actions, text="AI 评价我的回复  →", style="Accent.TButton", command=self._score_practice)
+        self.score_btn.pack(side="left")
+        self.clear_practice_btn = ttk.Button(practice_actions, text="清空", command=self._clear_practice)
+        self.clear_practice_btn.pack(side="left", padx=(9, 0))
+        self.score_status = tk.Label(practice_actions, text="仅用于练习，建议结合真实关系与场合判断。", bg=CARD, fg=MUTED, font=(FONT_FAMILY, 11))
+        self.score_status.pack(side="right", padx=(8, 0))
 
-        footer = ttk.Frame(outer)
-        footer.pack(fill="x", pady=(10, 0))
-        self.status_label = ttk.Label(footer, text="练习目标：表达清楚，而不是让每个人都满意。", style="Muted.TLabel")
-        self.status_label.pack(side="left")
-        ttk.Label(footer, text="AI 生成需要网络和 DeepSeek API 密钥", style="Muted.TLabel").pack(side="right")
+        self.score_frame = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        score_head = tk.Frame(self.score_frame, bg=CARD)
+        score_head.pack(fill="x", padx=19, pady=(14, 8))
+        tk.Label(score_head, text="AI 练习反馈", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 14, "bold")).pack(side="left")
+        self.score_total_label = tk.Label(score_head, text="— / 100", bg=ACCENT_LIGHT, fg=BLUE, font=(FONT_FAMILY, 15, "bold"), padx=11, pady=5)
+        self.score_total_label.pack(side="right")
+        score_grid = tk.Frame(self.score_frame, bg=CARD)
+        score_grid.pack(fill="x", padx=19, pady=(0, 9))
+        self.score_dimension_labels = {}
+        for col, (key, label) in enumerate((("clarity", "表达清晰"), ("boundary", "边界明确"), ("tone", "语气合适"), ("context", "情境判断"))):
+            cell = tk.Frame(score_grid, bg="#F6F7FB")
+            cell.grid(row=0, column=col, sticky="ew", padx=(0 if col == 0 else 5, 0))
+            score_grid.columnconfigure(col, weight=1)
+            tk.Label(cell, text=label, bg="#F6F7FB", fg=MUTED, font=(FONT_FAMILY, 11)).pack(anchor="w", padx=9, pady=(8, 1))
+            value = tk.Label(cell, text="— / 25", bg="#F6F7FB", fg=TEXT, font=(FONT_FAMILY, 13, "bold"))
+            value.pack(anchor="w", padx=9, pady=(0, 8))
+            self.score_dimension_labels[key] = value
+        self.score_feedback_label = tk.Label(self.score_frame, text="", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 13), justify="left", anchor="w", wraplength=900)
+        self.score_feedback_label.pack(fill="x", padx=19, pady=(0, 14))
+        self.score_frame.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        self.score_frame.grid_remove()
 
-    def _card_label(self, parent, text, row, pady=(0, 0)):
-        label = ttk.Label(parent, text=text, style="CardTitle.TLabel")
-        label.grid(row=row, column=0, sticky="w", pady=pady)
-        return label
+        reference_actions = tk.Frame(self.content, bg=BG)
+        reference_actions.grid(row=4, column=0, sticky="ew", pady=(0, 8))
+        tk.Label(reference_actions, text="完成练习后，再看看其他表达方式", bg=BG, fg=MUTED, font=(FONT_FAMILY, 12)).pack(side="left")
+        self.reference_btn = ttk.Button(reference_actions, text="查看参考回复  ↓", style="Soft.TButton", command=self._toggle_reference)
+        self.reference_btn.pack(side="right")
+
+        self.reference_frame = tk.Frame(self.content, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        reference_head = tk.Frame(self.reference_frame, bg=CARD)
+        reference_head.pack(fill="x", padx=17, pady=(13, 6))
+        tk.Label(reference_head, text="参考回复", bg=CARD, fg=TEXT, font=(FONT_FAMILY, 14, "bold")).pack(side="left")
+        self.tone_frame = tk.Frame(reference_head, bg=CARD)
+        self.tone_frame.pack(side="right")
+        self.soft_btn = tk.Radiobutton(self.tone_frame, text="温和但清晰", value="soft", variable=self.tone, command=self._update_reply,
+                                       indicatoron=False, selectcolor=ACCENT_LIGHT, bg=CARD, fg=MUTED, activebackground=CARD,
+                                       font=(FONT_FAMILY, 12), padx=10, pady=6, bd=0, highlightthickness=0)
+        self.soft_btn.pack(side="left", padx=(0, 4))
+        self.firm_btn = tk.Radiobutton(self.tone_frame, text="坚定直接", value="firm", variable=self.tone, command=self._update_reply,
+                                       indicatoron=False, selectcolor=ACCENT_LIGHT, bg=CARD, fg=MUTED, activebackground=CARD,
+                                       font=(FONT_FAMILY, 12), padx=10, pady=6, bd=0, highlightthickness=0)
+        self.firm_btn.pack(side="left")
+        self.reply_text = tk.Text(self.reference_frame, height=3, wrap="word", relief="flat", bd=0, bg="#F8F9FC", fg=TEXT,
+                                  font=(FONT_FAMILY, 13), padx=15, pady=12, spacing1=3, spacing3=4,
+                                  selectbackground="#E6E4FF", selectforeground=TEXT)
+        self.reply_text.pack(fill="x", padx=17, pady=(0, 10))
+        self.reply_text.configure(state="disabled")
+        reference_footer = tk.Frame(self.reference_frame, bg=CARD)
+        reference_footer.pack(fill="x", padx=17, pady=(0, 13))
+        self.analysis_btn = ttk.Button(reference_footer, text="沟通原则与常见误区  ↓", command=self._toggle_analysis)
+        self.analysis_btn.pack(side="left")
+        self.copy_btn = ttk.Button(reference_footer, text="复制这条回复", command=self._copy_reply)
+        self.copy_btn.pack(side="right")
+        self.reference_frame.grid(row=5, column=0, sticky="ew", pady=(0, 9))
+        self.reference_frame.grid_remove()
+
+        self.analysis_frame = tk.Frame(self.content, bg="#F6F7FB", highlightbackground=BORDER, highlightthickness=1)
+        self.analysis_frame.grid(row=6, column=0, sticky="ew", pady=(0, 10))
+        self.rule_title = tk.Label(self.analysis_frame, text="这句话的沟通原则", bg="#F6F7FB", fg=GREEN, font=FONT_LABEL, anchor="w")
+        self.rule_title.pack(fill="x", padx=15, pady=(12, 4))
+        self.rule_label = tk.Label(self.analysis_frame, text="", bg="#F6F7FB", fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=900)
+        self.rule_label.pack(fill="x", padx=15, pady=(0, 8))
+        tk.Frame(self.analysis_frame, bg=BORDER, height=1).pack(fill="x", padx=15, pady=1)
+        tk.Label(self.analysis_frame, text="常见误区", bg="#F6F7FB", fg=RED, font=FONT_LABEL, anchor="w").pack(fill="x", padx=15, pady=(8, 4))
+        self.bad_label = tk.Label(self.analysis_frame, text="", bg="#F6F7FB", fg=TEXT, font=FONT_BODY, justify="left", anchor="w", wraplength=900)
+        self.bad_label.pack(fill="x", padx=15, pady=(0, 12))
+        self.analysis_frame.grid_remove()
+
+        self.status_label = tk.Label(workspace, text="练习目标：表达清楚，也尊重彼此。", bg=BG, fg=MUTED, font=(FONT_FAMILY, 11), anchor="w")
+        self.status_label.grid(row=2, column=0, sticky="ew", padx=34, pady=(0, 10))
+        splitter.add(sidebar, minsize=220, width=286, stretch="never")
+        splitter.add(workspace, minsize=620, stretch="always")
+
+    def _on_mousewheel(self, event):
+        x = self.content_canvas.winfo_rootx()
+        y = self.content_canvas.winfo_rooty()
+        inside_canvas = x <= event.x_root < x + self.content_canvas.winfo_width() and y <= event.y_root < y + self.content_canvas.winfo_height()
+        if inside_canvas:
+            self.content_canvas.yview_scroll(int(-event.delta / 120), "units")
+            return "break"
+
+    def _update_wrap_lengths(self, event):
+        wraplength = max(360, event.width - 36)
+        for widget in (self.scene_title, self.situation_label, self.score_feedback_label, self.rule_label, self.bad_label):
+            widget.configure(wraplength=wraplength)
 
     def _refresh_scene_list(self):
         current = self.selected_index
@@ -390,6 +458,8 @@ class SocialReplyTrainer:
             self._select_scene(current)
 
     def _on_scene_select(self, _event=None):
+        if self.is_scoring:
+            return
         selection = self.scene_list.curselection()
         if not selection:
             return
@@ -411,7 +481,20 @@ class SocialReplyTrainer:
         self._update_reply()
         self._update_analysis()
         self.practice_text.delete("1.0", tk.END)
-        self.status_label.configure(text=f"当前场景：{index + 1}/{len(self.scenes)}  ·  练习目标：表达清楚，而不是让每个人都满意。")
+        self.score_result = None
+        self.score_frame.grid_remove()
+        self.reference_frame.grid_remove()
+        self.analysis_frame.grid_remove()
+        self.show_reference = False
+        self.show_analysis = False
+        self.reference_btn.configure(text="查看参考回复  ↓")
+        self.analysis_btn.configure(text="沟通原则与常见误区  ↓")
+        self.score_total_label.configure(text="— / 100")
+        self.score_feedback_label.configure(text="")
+        for label in self.score_dimension_labels.values():
+            label.configure(text="— / 25")
+        self.score_status.configure(text="先写下你的版本，再获取 AI 反馈。")
+        self.status_label.configure(text=f"场景 {index + 1} / {len(self.scenes)}  ·  练习目标：表达清楚，也尊重彼此。")
 
     def _update_reply(self):
         s = self.scenes[self.selected_index]
@@ -420,8 +503,8 @@ class SocialReplyTrainer:
         self.reply_text.delete("1.0", tk.END)
         self.reply_text.insert("1.0", reply)
         self.reply_text.configure(state="disabled")
-        self.soft_btn.configure(fg=BLUE if self.tone.get() == "soft" else MUTED, font=(FONT_FAMILY, 14, "bold" if self.tone.get() == "soft" else "normal"))
-        self.firm_btn.configure(fg=BLUE if self.tone.get() == "firm" else MUTED, font=(FONT_FAMILY, 14, "bold" if self.tone.get() == "firm" else "normal"))
+        self.soft_btn.configure(fg=BLUE if self.tone.get() == "soft" else MUTED, font=(FONT_FAMILY, 12, "bold" if self.tone.get() == "soft" else "normal"))
+        self.firm_btn.configure(fg=BLUE if self.tone.get() == "firm" else MUTED, font=(FONT_FAMILY, 12, "bold" if self.tone.get() == "firm" else "normal"))
 
     def _update_analysis(self):
         s = self.scenes[self.selected_index]
@@ -602,17 +685,69 @@ class SocialReplyTrainer:
             f"用户的额外要求：{extra_notes or '无'}\n\n"
             "请按系统要求只返回 JSON。回复必须自然、简洁、可直接说出口。"
         )
+        result = self._request_ai_json(api_key, model, SYSTEM_PROMPT, user_content, 1800, 0.7)
+        required = ("soft", "firm", "bad", "rule")
+        if not isinstance(result, dict) or any(not isinstance(result.get(k), str) or not result[k].strip() for k in required):
+            raise RuntimeError("AI 返回的数据缺少必要字段。请点击重新生成再试一次。")
+        return {k: result[k].strip() for k in required}
+
+    def _request_ai_score(self, api_key, model, scene, response):
+        score_prompt = """你是一位审慎、支持性的中文沟通教练。请评估用户写出的回复是否适合给定的真实社交情景。
+
+评价原则：
+- 不把强硬等同于高分，也不把顺从等同于温和。
+- 结合权力差异、关系、冲突成本和现实安全；在高风险场景中优先考虑安全与可执行性。
+- 评价表达是否清楚、边界是否合适、语气是否自然、是否贴合情境。
+- 分数是练习反馈，不是对用户或关系的判断；保持鼓励，避免羞辱和武断结论。
+- 给一个可选改写，保留用户本意，不编造新事实；如果原句已经合适，可以说明无需大改。
+- 只返回合法 JSON，不要 Markdown 或额外文字。所有文字字段都使用简体中文。
+
+结构：
+{
+  "clarity": 0,
+  "boundary": 0,
+  "tone": 0,
+  "context": 0,
+  "strength": "做得好的地方",
+  "suggestion": "一个具体、可执行的调整建议",
+  "rewrite": "保留用户本意的可选改写"
+}
+四项分数都必须是 0 到 25 的整数，分别评价表达清晰、边界适当、语气自然、情境适配。"""
+        user_content = (
+            f"请评价以下练习回复。场景分类：{scene['group']}\n"
+            f"场景标题：{scene['title']}\n具体情景：{scene['trigger']}\n"
+            f"用户写的回复：{response}\n\n"
+            "请依据系统提示评分，并只返回指定 JSON 对象。"
+        )
+        result = self._request_ai_json(api_key, model, score_prompt, user_content, 1100, 0.3)
+        score_keys = ("clarity", "boundary", "tone", "context")
+        text_keys = ("strength", "suggestion", "rewrite")
+        if not isinstance(result, dict):
+            raise RuntimeError("AI 评分结果格式无法识别，请重试。")
+        for key in score_keys:
+            value = result.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 25:
+                raise RuntimeError("AI 返回的评分不完整或超出范围，请重新获取反馈。")
+        if any(not isinstance(result.get(key), str) or not result[key].strip() for key in text_keys):
+            raise RuntimeError("AI 反馈内容不完整，请重新获取反馈。")
+        return {
+            **{key: result[key] for key in score_keys},
+            "total": sum(result[key] for key in score_keys),
+            **{key: result[key].strip() for key in text_keys}
+        }
+
+    def _request_ai_json(self, api_key, model, system_prompt, user_content, max_tokens, temperature):
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
             "stream": False,
             "thinking": {"type": "disabled"},
             "response_format": {"type": "json_object"},
-            "temperature": 0.7,
-            "max_tokens": 1800
+            "temperature": temperature,
+            "max_tokens": max_tokens
         }
         request = urllib.request.Request(
             API_URL,
@@ -646,10 +781,7 @@ class SocialReplyTrainer:
             result = json.loads(content)
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
             raise RuntimeError(f"AI 返回格式无法识别，请重新生成。详细信息：{e}")
-        required = ("soft", "firm", "bad", "rule")
-        if not isinstance(result, dict) or any(not isinstance(result.get(k), str) or not result[k].strip() for k in required):
-            raise RuntimeError("AI 返回的数据缺少必要字段。请点击重新生成再试一次。")
-        return {k: result[k].strip() for k in required}
+        return result
 
     def _copy_reply(self):
         text = self.scenes[self.selected_index][self.tone.get()]
@@ -660,45 +792,99 @@ class SocialReplyTrainer:
     def _toggle_analysis(self):
         self.show_analysis = not self.show_analysis
         if self.show_analysis:
-            # Keep the page compact: show either the analysis or practice section at once.
-            if self.show_answer:
-                self.show_answer = False
-                self.practice_frame.grid_remove()
-                self.practice_btn.configure(text="先自己练一句 ↓")
             self.analysis_frame.grid()
-            self.analysis_btn.configure(text="收起分析 ↑")
+            self.analysis_btn.configure(text="收起沟通原则  ↑")
         else:
             self.analysis_frame.grid_remove()
-            self.analysis_btn.configure(text="为什么这样回复？")
+            self.analysis_btn.configure(text="沟通原则与常见误区  ↓")
 
-    def _toggle_practice(self):
-        self.show_answer = not self.show_answer
-        if self.show_answer:
-            # Keep the page compact: show either the analysis or practice section at once.
-            if self.show_analysis:
-                self.show_analysis = False
-                self.analysis_frame.grid_remove()
-                self.analysis_btn.configure(text="为什么这样回复？")
-            self.practice_frame.grid()
-            self.practice_btn.configure(text="收起练习 ↑")
-            self.practice_text.focus_set()
+    def _toggle_reference(self):
+        self.show_reference = not self.show_reference
+        if self.show_reference:
+            self.reference_frame.grid()
+            self.reference_btn.configure(text="收起参考回复  ↑")
+            self._update_reply()
         else:
-            self.practice_frame.grid_remove()
-            self.practice_btn.configure(text="先自己练一句 ↓")
+            self.reference_frame.grid_remove()
+            self.analysis_frame.grid_remove()
+            self.show_analysis = False
+            self.analysis_btn.configure(text="沟通原则与常见误区  ↓")
+            self.reference_btn.configure(text="查看参考回复  ↓")
+
+    def _score_practice(self):
+        response = self.practice_text.get("1.0", "end-1c").strip()
+        if not response:
+            messagebox.showinfo("先写一句", "先写下你会怎么回应，再请 AI 帮你分析。", parent=self.root)
+            self.practice_text.focus_set()
+            return
+        api_key = self.settings.get("api_key", "").strip()
+        if not api_key:
+            messagebox.showinfo("需要配置 API", "先配置 DeepSeek API 密钥，之后就可以练习并获取 AI 反馈。", parent=self.root)
+            self._open_api_settings()
+            return
+
+        model = self.settings.get("model", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+        scene = self.scenes[self.selected_index]
+        self.is_scoring = True
+        self.score_btn.configure(state="disabled", text="AI 正在分析…")
+        self.clear_practice_btn.configure(state="disabled")
+        self.practice_text.configure(state="disabled")
+        self.scene_list.configure(state="disabled")
+        self.category_combo.configure(state="disabled")
+        self.score_status.configure(text="正在分析表达、边界、语气和情境…")
+
+        def worker():
+            try:
+                result = self._request_ai_score(api_key, model, scene, response)
+                self.root.after(0, lambda: on_success(result))
+            except Exception as e:
+                err = str(e)
+                self.root.after(0, lambda err=err: on_error(err))
+
+        def on_success(result):
+            self.is_scoring = False
+            self.scene_list.configure(state="normal")
+            self.category_combo.configure(state="readonly")
+            self.score_btn.configure(state="normal", text="再评一次  →")
+            self.clear_practice_btn.configure(state="normal")
+            self.practice_text.configure(state="normal")
+            self.score_result = result
+            self.score_total_label.configure(text=f"{result['total']} / 100")
+            for key, label in self.score_dimension_labels.items():
+                label.configure(text=f"{result[key]} / 25")
+            self.score_feedback_label.configure(
+                text=f"做得好的地方：{result['strength']}\n\n可以再试试：{result['suggestion']}\n\n一个可选版本：{result['rewrite']}"
+            )
+            self.score_frame.grid()
+            self.score_status.configure(text="评分完成。分数用于练习参考，不代表唯一正确答案。")
+            self.status_label.configure(text="AI 反馈已生成。看看建议，再按自己的语气调整。")
+
+        def on_error(err):
+            self.is_scoring = False
+            self.scene_list.configure(state="normal")
+            self.category_combo.configure(state="readonly")
+            self.score_btn.configure(state="normal", text="重新获取 AI 反馈  →")
+            self.clear_practice_btn.configure(state="normal")
+            self.practice_text.configure(state="normal")
+            self.score_status.configure(text="评分暂时失败，请检查 API 设置或网络后重试。")
+            messagebox.showerror("AI 评分失败", err, parent=self.root)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _clear_practice(self):
         self.practice_text.delete("1.0", tk.END)
-        self.status_label.configure(text="练习区已清空。再试一次，写出你更愿意说出口的版本。")
+        self.score_result = None
+        self.score_frame.grid_remove()
+        self.score_btn.configure(state="normal", text="AI 评价我的回复  →")
+        self.score_status.configure(text="先写下你的版本，再获取 AI 反馈。")
+        self.status_label.configure(text="练习区已清空。写下你愿意说出口的版本，再试一次。")
 
-    def _copy_practice(self):
-        text = self.practice_text.get("1.0", "end-1c").strip()
-        if not text:
-            messagebox.showinfo("还没有内容", "先在练习区写一句自己的回复，再复制。")
-            return
-        self.root.clipboard_clear()
-        self.root.clipboard_append(text)
-        self.status_label.configure(text="已复制你的练习回复。")
-
+    def _on_practice_edit(self, _event=None):
+        if self.score_result is not None:
+            self.score_result = None
+            self.score_frame.grid_remove()
+            self.score_btn.configure(text="AI 评价我的回复  →")
+            self.score_status.configure(text="回复已修改，请重新获取 AI 反馈。")
 
 def main():
     root = tk.Tk()
